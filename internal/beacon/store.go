@@ -60,11 +60,11 @@ func (s *FileStore) Delete(pid int) error {
 }
 
 // List returns all states from beacon files in the base directory.
-// Returns an empty slice if the directory does not exist.
+// Returns nil if the directory does not exist.
 func (s *FileStore) List() ([]State, error) {
 	entries, err := os.ReadDir(s.baseDir)
 	if os.IsNotExist(err) {
-		return []State{}, nil
+		return nil, nil
 	}
 	if err != nil {
 		return nil, err
@@ -79,8 +79,7 @@ func (s *FileStore) List() ([]State, error) {
 		if err != nil {
 			continue
 		}
-		path := filepath.Join(s.baseDir, entry.Name())
-		content, err := os.ReadFile(path)
+		content, err := os.ReadFile(filepath.Join(s.baseDir, entry.Name()))
 		if err != nil {
 			continue
 		}

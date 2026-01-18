@@ -15,7 +15,7 @@ type EmitCmd struct {
 	Message string `arg:"" help:"Message to emit"`
 }
 
-func (c *EmitCmd) Run(ctx *kong.Context, cli *CLI) error {
+func (c *EmitCmd) Run(cli *CLI) error {
 	b, err := cli.newBeacon()
 	if err != nil {
 		return err
@@ -25,7 +25,7 @@ func (c *EmitCmd) Run(ctx *kong.Context, cli *CLI) error {
 
 type SilenceCmd struct{}
 
-func (c *SilenceCmd) Run(ctx *kong.Context, cli *CLI) error {
+func (c *SilenceCmd) Run(cli *CLI) error {
 	b, err := cli.newBeacon()
 	if err != nil {
 		return err
@@ -35,7 +35,7 @@ func (c *SilenceCmd) Run(ctx *kong.Context, cli *CLI) error {
 
 type ListCmd struct{}
 
-func (c *ListCmd) Run(ctx *kong.Context, cli *CLI) error {
+func (c *ListCmd) Run(cli *CLI) error {
 	b, err := cli.newBeacon()
 	if err != nil {
 		return err
@@ -61,19 +61,17 @@ func NewCLI(ppid int) *CLI {
 }
 
 func (c *CLI) newBeacon() (*beacon.Beacon, error) {
-	store := c.store
-	if store == nil {
-		var err error
-		store, err = beacon.NewFileStore()
+	if c.store == nil {
+		store, err := beacon.NewFileStore()
 		if err != nil {
 			return nil, err
 		}
+		c.store = store
 	}
-	out := c.out
-	if out == nil {
-		out = os.Stdout
+	if c.out == nil {
+		c.out = os.Stdout
 	}
-	return beacon.New(store, out), nil
+	return beacon.New(c.store, c.out), nil
 }
 
 func (c *CLI) Execute(args []string) error {
