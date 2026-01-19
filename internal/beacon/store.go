@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/monochromegane/beacon/internal/storage"
 )
 
 // State represents the content of a beacon state file.
@@ -27,7 +29,7 @@ type FileStore struct {
 
 // NewFileStore creates a new FileStore with the resolved base directory.
 func NewFileStore() (*FileStore, error) {
-	baseDir, err := resolveBaseDir()
+	baseDir, err := storage.ResolveBaseDir()
 	if err != nil {
 		return nil, err
 	}
@@ -89,16 +91,4 @@ func (s *FileStore) List() ([]State, error) {
 		})
 	}
 	return states, nil
-}
-
-// resolveBaseDir returns the base directory for beacon state files.
-func resolveBaseDir() (string, error) {
-	if xdgCache := os.Getenv("XDG_CACHE_HOME"); xdgCache != "" {
-		return filepath.Join(xdgCache, "beacon"), nil
-	}
-	userCache, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(userCache, "beacon"), nil
 }

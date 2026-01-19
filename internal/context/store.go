@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/monochromegane/beacon/internal/storage"
 )
 
 // ContextStore handles persistence of context information as JSON files.
@@ -19,7 +21,7 @@ type FileContextStore struct {
 
 // NewFileContextStore creates a new FileContextStore with the resolved base directory.
 func NewFileContextStore() (*FileContextStore, error) {
-	baseDir, err := resolveBaseDir()
+	baseDir, err := storage.ResolveBaseDir()
 	if err != nil {
 		return nil, err
 	}
@@ -53,16 +55,4 @@ func (s *FileContextStore) Delete(pid int) error {
 		return nil
 	}
 	return err
-}
-
-// resolveBaseDir returns the base directory for context files.
-func resolveBaseDir() (string, error) {
-	if xdgCache := os.Getenv("XDG_CACHE_HOME"); xdgCache != "" {
-		return filepath.Join(xdgCache, "beacon"), nil
-	}
-	userCache, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(userCache, "beacon"), nil
 }
