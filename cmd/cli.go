@@ -1,18 +1,21 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/alecthomas/kong"
 	"github.com/monochromegane/beacon/internal/beacon"
+	"github.com/monochromegane/beacon/internal/context"
 )
 
 const cmdName = "beacon"
 
 type EmitCmd struct {
 	Message string `arg:"" help:"Message to emit"`
+	Context string `name:"context" short:"c" help:"Context type (tmux)" enum:",tmux" default:""`
 }
 
 func (c *EmitCmd) Run(cli *CLI) error {
@@ -20,7 +23,16 @@ func (c *EmitCmd) Run(cli *CLI) error {
 	if err != nil {
 		return err
 	}
-	return b.Emit(cli.ppid, c.Message)
+
+	if c.Context == "" {
+		return b.Emit(cli.ppid, c.Message)
+	}
+
+	ctx, err := cli.getContext(c.Context)
+	if err != nil {
+		return err
+	}
+	return b.EmitWithContext(cli.ppid, c.Message, ctx)
 }
 
 type SilenceCmd struct{}
@@ -49,9 +61,10 @@ type CLI struct {
 	Silence SilenceCmd       `cmd:"" help:"Silence the beacon"`
 	List    ListCmd          `cmd:"" help:"List all active beacons"`
 
-	ppid  int
-	store beacon.Store
-	out   io.Writer
+	ppid         int
+	store        beacon.Store
+	contextStore context.ContextStore
+	out          io.Writer
 }
 
 func NewCLI(ppid int) *CLI {
@@ -68,10 +81,27 @@ func (c *CLI) newBeacon() (*beacon.Beacon, error) {
 		}
 		c.store = store
 	}
+	if c.contextStore == nil {
+		contextStore, err := context.NewFileContextStore()
+		if err != nil {
+			return nil, err
+		}
+		c.contextStore = contextStore
+	}
 	if c.out == nil {
 		c.out = os.Stdout
 	}
-	return beacon.New(c.store, c.out), nil
+	return beacon.NewWithContextStore(c.store, c.contextStore, c.out), nil
+}
+
+func (c *CLI) getContext(contextType string) (context.Context, error) {
+	switch contextType {
+	case "tmux":
+		provider := context.NewTmuxProvider()
+		return provider.GetContext()
+	default:
+		return nil, errors.New("unknown context type: " + contextType)
+	}
 }
 
 func (c *CLI) Execute(args []string) error {

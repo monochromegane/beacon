@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	"github.com/monochromegane/beacon/internal/beacon"
+	"github.com/monochromegane/beacon/internal/context"
 )
 
 func TestNewCLI(t *testing.T) {
@@ -43,10 +45,30 @@ func (m *mockStore) List() ([]beacon.State, error) {
 	return states, nil
 }
 
+type mockContextStore struct {
+	contexts map[int]context.Context
+}
+
+func newMockContextStore() *mockContextStore {
+	return &mockContextStore{contexts: make(map[int]context.Context)}
+}
+
+func (m *mockContextStore) Write(pid int, ctx context.Context) error {
+	m.contexts[pid] = ctx
+	return nil
+}
+
+func (m *mockContextStore) Delete(pid int) error {
+	delete(m.contexts, pid)
+	return nil
+}
+
 func TestCLI_Emit(t *testing.T) {
 	store := newMockStore()
+	contextStore := newMockContextStore()
 	cli := NewCLI(12345)
 	cli.store = store
+	cli.contextStore = contextStore
 
 	err := cli.Execute([]string{"emit", "test message"})
 	if err != nil {
@@ -61,8 +83,10 @@ func TestCLI_Emit(t *testing.T) {
 func TestCLI_Silence(t *testing.T) {
 	store := newMockStore()
 	store.states[12345] = "existing message"
+	contextStore := newMockContextStore()
 	cli := NewCLI(12345)
 	cli.store = store
+	cli.contextStore = contextStore
 
 	err := cli.Execute([]string{"silence"})
 	if err != nil {
@@ -77,9 +101,11 @@ func TestCLI_Silence(t *testing.T) {
 func TestCLI_List(t *testing.T) {
 	store := newMockStore()
 	store.states[12345] = "message 1"
+	contextStore := newMockContextStore()
 	var buf bytes.Buffer
 	cli := NewCLI(99999)
 	cli.store = store
+	cli.contextStore = contextStore
 	cli.out = &buf
 
 	err := cli.Execute([]string{"list"})
@@ -90,5 +116,26 @@ func TestCLI_List(t *testing.T) {
 	expected := "12345\tmessage 1\n"
 	if buf.String() != expected {
 		t.Errorf("List output = %q, want %q", buf.String(), expected)
+	}
+}
+
+func TestCLI_Emit_WithContext_NotInTmux(t *testing.T) {
+	originalTmux := os.Getenv("TMUX")
+	os.Unsetenv("TMUX")
+	defer func() {
+		if originalTmux != "" {
+			os.Setenv("TMUX", originalTmux)
+		}
+	}()
+
+	store := newMockStore()
+	contextStore := newMockContextStore()
+	cli := NewCLI(12345)
+	cli.store = store
+	cli.contextStore = contextStore
+
+	err := cli.Execute([]string{"emit", "--context", "tmux", "test message"})
+	if err == nil {
+		t.Error("Execute() expected error when not in tmux, got nil")
 	}
 }
