@@ -12,6 +12,7 @@ import (
 type ContextStore interface {
 	Write(pid int, ctx Context) error
 	Delete(pid int) error
+	Read(pid int) ([]byte, error)
 }
 
 // FileContextStore is the file-based implementation of ContextStore.
@@ -55,4 +56,10 @@ func (s *FileContextStore) Delete(pid int) error {
 		return nil
 	}
 	return err
+}
+
+// Read returns the raw JSON content of the context file for the given PID.
+func (s *FileContextStore) Read(pid int) ([]byte, error) {
+	path := filepath.Join(s.baseDir, strconv.Itoa(pid)+".json")
+	return os.ReadFile(path)
 }

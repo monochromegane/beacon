@@ -3,6 +3,7 @@ package beacon
 import (
 	"bytes"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/monochromegane/beacon/internal/context"
@@ -76,6 +77,14 @@ func (m *mockContextStore) Delete(pid int) error {
 	}
 	delete(m.contexts, pid)
 	return nil
+}
+
+func (m *mockContextStore) Read(pid int) ([]byte, error) {
+	ctx, ok := m.contexts[pid]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return ctx.ToJSON()
 }
 
 func TestBeacon_Emit(t *testing.T) {
