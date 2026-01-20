@@ -63,6 +63,14 @@ func (m *mockContextStore) Delete(pid int) error {
 	return nil
 }
 
+func (m *mockContextStore) Read(pid int) ([]byte, error) {
+	ctx, ok := m.contexts[pid]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return ctx.ToJSON()
+}
+
 func TestCLI_Emit(t *testing.T) {
 	store := newMockStore()
 	contextStore := newMockContextStore()
@@ -137,5 +145,93 @@ func TestCLI_Emit_WithContext_NotInTmux(t *testing.T) {
 	err := cli.Execute([]string{"emit", "--context", "tmux", "test message"})
 	if err == nil {
 		t.Error("Execute() expected error when not in tmux, got nil")
+	}
+}
+
+func TestCLI_Context_JSON(t *testing.T) {
+	store := newMockStore()
+	contextStore := newMockContextStore()
+	contextStore.contexts[12345] = &context.TmuxContext{
+		SessionName: "main",
+		WindowIndex: 0,
+		PaneIndex:   1,
+		PaneID:      "%2",
+	}
+	var buf bytes.Buffer
+	cli := NewCLI(99999)
+	cli.store = store
+	cli.contextStore = contextStore
+	cli.out = &buf
+
+	err := cli.Execute([]string{"context", "12345"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	expected := `{"session_name":"main","window_index":0,"pane_index":1,"pane_id":"%2"}` + "\n"
+	if buf.String() != expected {
+		t.Errorf("Context output = %q, want %q", buf.String(), expected)
+	}
+}
+
+func TestCLI_Context_Template(t *testing.T) {
+	store := newMockStore()
+	contextStore := newMockContextStore()
+	contextStore.contexts[12345] = &context.TmuxContext{
+		SessionName: "main",
+		WindowIndex: 0,
+		PaneIndex:   1,
+		PaneID:      "%2",
+	}
+	var buf bytes.Buffer
+	cli := NewCLI(99999)
+	cli.store = store
+	cli.contextStore = contextStore
+	cli.out = &buf
+
+	err := cli.Execute([]string{"context", "--template", "{{.session_name}}:{{.pane_id}}", "12345"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	expected := "main:%2\n"
+	if buf.String() != expected {
+		t.Errorf("Context output = %q, want %q", buf.String(), expected)
+	}
+}
+
+func TestCLI_Context_NotFound(t *testing.T) {
+	store := newMockStore()
+	contextStore := newMockContextStore()
+	var buf bytes.Buffer
+	cli := NewCLI(99999)
+	cli.store = store
+	cli.contextStore = contextStore
+	cli.out = &buf
+
+	err := cli.Execute([]string{"context", "99999"})
+	if err == nil {
+		t.Error("Execute() expected error for non-existent context, got nil")
+	}
+}
+
+func TestCLI_Context_InvalidTemplate(t *testing.T) {
+	store := newMockStore()
+	contextStore := newMockContextStore()
+	contextStore.contexts[12345] = &context.TmuxContext{
+		SessionName: "main",
+		WindowIndex: 0,
+		PaneIndex:   1,
+		PaneID:      "%2",
+	}
+	var buf bytes.Buffer
+	cli := NewCLI(99999)
+	cli.store = store
+	cli.contextStore = contextStore
+	cli.out = &buf
+
+	err := cli.Execute([]string{"context", "--template", "{{.invalid", "12345"})
+	if err == nil {
+		t.Error("Execute() expected error for invalid template, got nil")
 	}
 }

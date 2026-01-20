@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"text/template"
 
 	"github.com/alecthomas/kong"
 	"github.com/monochromegane/beacon/internal/beacon"
@@ -55,11 +57,50 @@ func (c *ListCmd) Run(cli *CLI) error {
 	return b.List()
 }
 
+type ContextCmd struct {
+	PID      int    `arg:"" help:"Process ID to read context for"`
+	Template string `name:"template" short:"t" help:"Go text/template string for custom formatting" default:""`
+}
+
+func (c *ContextCmd) Run(cli *CLI) error {
+	store, err := cli.getContextStore()
+	if err != nil {
+		return err
+	}
+
+	data, err := store.Read(c.PID)
+	if err != nil {
+		return err
+	}
+
+	if c.Template == "" {
+		fmt.Fprintln(cli.out, string(data))
+		return nil
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		return err
+	}
+
+	tmpl, err := template.New("context").Parse(c.Template)
+	if err != nil {
+		return err
+	}
+
+	if err := tmpl.Execute(cli.out, m); err != nil {
+		return err
+	}
+	fmt.Fprintln(cli.out)
+	return nil
+}
+
 type CLI struct {
 	Version kong.VersionFlag `help:"Show version"`
 	Emit    EmitCmd          `cmd:"" help:"Emit a beacon signal"`
 	Silence SilenceCmd       `cmd:"" help:"Silence the beacon"`
 	List    ListCmd          `cmd:"" help:"List all active beacons"`
+	Context ContextCmd       `cmd:"" help:"Display context for a process"`
 
 	ppid         int
 	store        beacon.Store
@@ -73,6 +114,20 @@ func NewCLI(ppid int) *CLI {
 	}
 }
 
+func (c *CLI) initDefaults() error {
+	if c.contextStore == nil {
+		contextStore, err := context.NewFileContextStore()
+		if err != nil {
+			return err
+		}
+		c.contextStore = contextStore
+	}
+	if c.out == nil {
+		c.out = os.Stdout
+	}
+	return nil
+}
+
 func (c *CLI) newBeacon() (*beacon.Beacon, error) {
 	if c.store == nil {
 		store, err := beacon.NewFileStore()
@@ -81,17 +136,17 @@ func (c *CLI) newBeacon() (*beacon.Beacon, error) {
 		}
 		c.store = store
 	}
-	if c.contextStore == nil {
-		contextStore, err := context.NewFileContextStore()
-		if err != nil {
-			return nil, err
-		}
-		c.contextStore = contextStore
-	}
-	if c.out == nil {
-		c.out = os.Stdout
+	if err := c.initDefaults(); err != nil {
+		return nil, err
 	}
 	return beacon.NewWithContextStore(c.store, c.contextStore, c.out), nil
+}
+
+func (c *CLI) getContextStore() (context.ContextStore, error) {
+	if err := c.initDefaults(); err != nil {
+		return nil, err
+	}
+	return c.contextStore, nil
 }
 
 func (c *CLI) getContext(contextType string) (context.Context, error) {

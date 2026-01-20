@@ -84,3 +84,39 @@ func TestFileContextStore_Delete_NonExistent(t *testing.T) {
 		t.Errorf("Delete() error = %v, want nil for non-existent file", err)
 	}
 }
+
+func TestFileContextStore_Read(t *testing.T) {
+	tmpDir := t.TempDir()
+	store := NewFileContextStoreWithDir(tmpDir)
+
+	ctx := &TmuxContext{
+		SessionName: "main",
+		WindowIndex: 0,
+		PaneIndex:   1,
+		PaneID:      "%2",
+	}
+	store.Write(12345, ctx)
+
+	data, err := store.Read(12345)
+	if err != nil {
+		t.Fatalf("Read() error = %v", err)
+	}
+
+	expected := `{"session_name":"main","window_index":0,"pane_index":1,"pane_id":"%2"}`
+	if string(data) != expected {
+		t.Errorf("Read() = %q, want %q", string(data), expected)
+	}
+}
+
+func TestFileContextStore_Read_NonExistent(t *testing.T) {
+	tmpDir := t.TempDir()
+	store := NewFileContextStoreWithDir(tmpDir)
+
+	_, err := store.Read(99999)
+	if err == nil {
+		t.Error("Read() expected error for non-existent file, got nil")
+	}
+	if !os.IsNotExist(err) {
+		t.Errorf("Read() error = %v, want os.IsNotExist error", err)
+	}
+}
