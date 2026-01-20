@@ -74,8 +74,7 @@ func (c *ContextCmd) Run(cli *CLI) error {
 	}
 
 	if c.Template == "" {
-		cli.out.Write(data)
-		cli.out.Write([]byte("\n"))
+		fmt.Fprintln(cli.out, string(data))
 		return nil
 	}
 
@@ -92,7 +91,7 @@ func (c *ContextCmd) Run(cli *CLI) error {
 	if err := tmpl.Execute(cli.out, m); err != nil {
 		return err
 	}
-	cli.out.Write([]byte("\n"))
+	fmt.Fprintln(cli.out)
 	return nil
 }
 
@@ -115,6 +114,20 @@ func NewCLI(ppid int) *CLI {
 	}
 }
 
+func (c *CLI) initDefaults() error {
+	if c.contextStore == nil {
+		contextStore, err := context.NewFileContextStore()
+		if err != nil {
+			return err
+		}
+		c.contextStore = contextStore
+	}
+	if c.out == nil {
+		c.out = os.Stdout
+	}
+	return nil
+}
+
 func (c *CLI) newBeacon() (*beacon.Beacon, error) {
 	if c.store == nil {
 		store, err := beacon.NewFileStore()
@@ -123,29 +136,15 @@ func (c *CLI) newBeacon() (*beacon.Beacon, error) {
 		}
 		c.store = store
 	}
-	if c.contextStore == nil {
-		contextStore, err := context.NewFileContextStore()
-		if err != nil {
-			return nil, err
-		}
-		c.contextStore = contextStore
-	}
-	if c.out == nil {
-		c.out = os.Stdout
+	if err := c.initDefaults(); err != nil {
+		return nil, err
 	}
 	return beacon.NewWithContextStore(c.store, c.contextStore, c.out), nil
 }
 
 func (c *CLI) getContextStore() (context.ContextStore, error) {
-	if c.contextStore == nil {
-		contextStore, err := context.NewFileContextStore()
-		if err != nil {
-			return nil, err
-		}
-		c.contextStore = contextStore
-	}
-	if c.out == nil {
-		c.out = os.Stdout
+	if err := c.initDefaults(); err != nil {
+		return nil, err
 	}
 	return c.contextStore, nil
 }
