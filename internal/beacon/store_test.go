@@ -10,12 +10,12 @@ func TestFileStore_Write(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewFileStoreWithDir(tmpDir)
 
-	err := store.Write(12345, "test message")
+	err := store.Write("test123", "test message")
 	if err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 
-	content, err := os.ReadFile(filepath.Join(tmpDir, "12345"))
+	content, err := os.ReadFile(filepath.Join(tmpDir, "test123"))
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
@@ -28,13 +28,13 @@ func TestFileStore_Write_Overwrite(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewFileStoreWithDir(tmpDir)
 
-	store.Write(12345, "first message")
-	err := store.Write(12345, "second message")
+	store.Write("test123", "first message")
+	err := store.Write("test123", "second message")
 	if err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 
-	content, err := os.ReadFile(filepath.Join(tmpDir, "12345"))
+	content, err := os.ReadFile(filepath.Join(tmpDir, "test123"))
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
@@ -47,14 +47,14 @@ func TestFileStore_Delete(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewFileStoreWithDir(tmpDir)
 
-	store.Write(12345, "test message")
+	store.Write("test123", "test message")
 
-	err := store.Delete(12345)
+	err := store.Delete("test123")
 	if err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 
-	_, err = os.Stat(filepath.Join(tmpDir, "12345"))
+	_, err = os.Stat(filepath.Join(tmpDir, "test123"))
 	if !os.IsNotExist(err) {
 		t.Errorf("Delete() file still exists")
 	}
@@ -64,7 +64,7 @@ func TestFileStore_Delete_NonExistent(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewFileStoreWithDir(tmpDir)
 
-	err := store.Delete(99999)
+	err := store.Delete("nonexistent")
 	if err != nil {
 		t.Errorf("Delete() error = %v, want nil for non-existent file", err)
 	}
@@ -74,8 +74,8 @@ func TestFileStore_List(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewFileStoreWithDir(tmpDir)
 
-	store.Write(12345, "message 1")
-	store.Write(67890, "message 2")
+	store.Write("session-abc", "message 1")
+	store.Write("session-xyz", "message 2")
 
 	states, err := store.List()
 	if err != nil {
@@ -85,16 +85,16 @@ func TestFileStore_List(t *testing.T) {
 		t.Fatalf("List() len = %d, want 2", len(states))
 	}
 
-	stateMap := make(map[int]string)
+	stateMap := make(map[string]string)
 	for _, s := range states {
-		stateMap[s.PID] = s.Message
+		stateMap[s.ID] = s.Message
 	}
 
-	if stateMap[12345] != "message 1" {
-		t.Errorf("List() state[12345] = %q, want %q", stateMap[12345], "message 1")
+	if stateMap["session-abc"] != "message 1" {
+		t.Errorf("List() state[session-abc] = %q, want %q", stateMap["session-abc"], "message 1")
 	}
-	if stateMap[67890] != "message 2" {
-		t.Errorf("List() state[67890] = %q, want %q", stateMap[67890], "message 2")
+	if stateMap["session-xyz"] != "message 2" {
+		t.Errorf("List() state[session-xyz] = %q, want %q", stateMap["session-xyz"], "message 2")
 	}
 }
 
@@ -123,12 +123,12 @@ func TestFileStore_List_NonExistentDir(t *testing.T) {
 	}
 }
 
-func TestFileStore_List_IgnoresNonPIDFiles(t *testing.T) {
+func TestFileStore_List_IgnoresJSONFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewFileStoreWithDir(tmpDir)
 
-	store.Write(12345, "valid")
-	os.WriteFile(filepath.Join(tmpDir, "not-a-pid"), []byte("invalid"), 0644)
+	store.Write("test123", "valid")
+	os.WriteFile(filepath.Join(tmpDir, "test123.json"), []byte("context"), 0644)
 	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0755)
 
 	states, err := store.List()
@@ -138,7 +138,7 @@ func TestFileStore_List_IgnoresNonPIDFiles(t *testing.T) {
 	if len(states) != 1 {
 		t.Fatalf("List() len = %d, want 1", len(states))
 	}
-	if states[0].PID != 12345 {
-		t.Errorf("List() state[0].PID = %d, want 12345", states[0].PID)
+	if states[0].ID != "test123" {
+		t.Errorf("List() state[0].ID = %s, want test123", states[0].ID)
 	}
 }

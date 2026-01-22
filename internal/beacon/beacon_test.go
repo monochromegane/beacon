@@ -11,7 +11,7 @@ import (
 
 // mockStore is a mock implementation of Store for testing.
 type mockStore struct {
-	states   map[int]string
+	states   map[string]string
 	writeErr error
 	delErr   error
 	listErr  error
@@ -19,23 +19,23 @@ type mockStore struct {
 
 func newMockStore() *mockStore {
 	return &mockStore{
-		states: make(map[int]string),
+		states: make(map[string]string),
 	}
 }
 
-func (m *mockStore) Write(pid int, message string) error {
+func (m *mockStore) Write(id string, message string) error {
 	if m.writeErr != nil {
 		return m.writeErr
 	}
-	m.states[pid] = message
+	m.states[id] = message
 	return nil
 }
 
-func (m *mockStore) Delete(pid int) error {
+func (m *mockStore) Delete(id string) error {
 	if m.delErr != nil {
 		return m.delErr
 	}
-	delete(m.states, pid)
+	delete(m.states, id)
 	return nil
 }
 
@@ -44,43 +44,43 @@ func (m *mockStore) List() ([]State, error) {
 		return nil, m.listErr
 	}
 	var states []State
-	for pid, msg := range m.states {
-		states = append(states, State{PID: pid, Message: msg})
+	for id, msg := range m.states {
+		states = append(states, State{ID: id, Message: msg})
 	}
 	return states, nil
 }
 
 // mockContextStore is a mock implementation of context.ContextStore for testing.
 type mockContextStore struct {
-	contexts map[int]context.Context
+	contexts map[string]context.Context
 	writeErr error
 	delErr   error
 }
 
 func newMockContextStore() *mockContextStore {
 	return &mockContextStore{
-		contexts: make(map[int]context.Context),
+		contexts: make(map[string]context.Context),
 	}
 }
 
-func (m *mockContextStore) Write(pid int, ctx context.Context) error {
+func (m *mockContextStore) Write(id string, ctx context.Context) error {
 	if m.writeErr != nil {
 		return m.writeErr
 	}
-	m.contexts[pid] = ctx
+	m.contexts[id] = ctx
 	return nil
 }
 
-func (m *mockContextStore) Delete(pid int) error {
+func (m *mockContextStore) Delete(id string) error {
 	if m.delErr != nil {
 		return m.delErr
 	}
-	delete(m.contexts, pid)
+	delete(m.contexts, id)
 	return nil
 }
 
-func (m *mockContextStore) Read(pid int) ([]byte, error) {
-	ctx, ok := m.contexts[pid]
+func (m *mockContextStore) Read(id string) ([]byte, error) {
+	ctx, ok := m.contexts[id]
 	if !ok {
 		return nil, os.ErrNotExist
 	}
@@ -91,13 +91,13 @@ func TestBeacon_Emit(t *testing.T) {
 	store := newMockStore()
 	b := New(store, nil)
 
-	err := b.Emit(12345, "test message")
+	err := b.Emit("test123", "test message")
 	if err != nil {
 		t.Fatalf("Emit() error = %v", err)
 	}
 
-	if store.states[12345] != "test message" {
-		t.Errorf("Emit() message = %q, want %q", store.states[12345], "test message")
+	if store.states["test123"] != "test message" {
+		t.Errorf("Emit() message = %q, want %q", store.states["test123"], "test message")
 	}
 }
 
@@ -106,7 +106,7 @@ func TestBeacon_Emit_Error(t *testing.T) {
 	store.writeErr = errors.New("write error")
 	b := New(store, nil)
 
-	err := b.Emit(12345, "test message")
+	err := b.Emit("test123", "test message")
 	if err == nil {
 		t.Error("Emit() expected error, got nil")
 	}
@@ -114,15 +114,15 @@ func TestBeacon_Emit_Error(t *testing.T) {
 
 func TestBeacon_Silence(t *testing.T) {
 	store := newMockStore()
-	store.states[12345] = "test message"
+	store.states["test123"] = "test message"
 	b := New(store, nil)
 
-	err := b.Silence(12345)
+	err := b.Silence("test123")
 	if err != nil {
 		t.Fatalf("Silence() error = %v", err)
 	}
 
-	if _, exists := store.states[12345]; exists {
+	if _, exists := store.states["test123"]; exists {
 		t.Error("Silence() state still exists")
 	}
 }
@@ -132,7 +132,7 @@ func TestBeacon_Silence_Error(t *testing.T) {
 	store.delErr = errors.New("delete error")
 	b := New(store, nil)
 
-	err := b.Silence(12345)
+	err := b.Silence("test123")
 	if err == nil {
 		t.Error("Silence() expected error, got nil")
 	}
@@ -140,7 +140,7 @@ func TestBeacon_Silence_Error(t *testing.T) {
 
 func TestBeacon_List(t *testing.T) {
 	store := newMockStore()
-	store.states[12345] = "message 1"
+	store.states["test123"] = "message 1"
 	var buf bytes.Buffer
 	b := New(store, &buf)
 
@@ -150,7 +150,7 @@ func TestBeacon_List(t *testing.T) {
 	}
 
 	output := buf.String()
-	expected := "12345\tmessage 1\n"
+	expected := "test123\tmessage 1\n"
 	if output != expected {
 		t.Errorf("List() output = %q, want %q", output, expected)
 	}
@@ -208,16 +208,16 @@ func TestBeacon_EmitWithContext(t *testing.T) {
 		json:        []byte(`{"session_name":"main"}`),
 	}
 
-	err := b.EmitWithContext(12345, "test message", ctx)
+	err := b.EmitWithContext("test123", "test message", ctx)
 	if err != nil {
 		t.Fatalf("EmitWithContext() error = %v", err)
 	}
 
-	if store.states[12345] != "test message" {
-		t.Errorf("EmitWithContext() message = %q, want %q", store.states[12345], "test message")
+	if store.states["test123"] != "test message" {
+		t.Errorf("EmitWithContext() message = %q, want %q", store.states["test123"], "test message")
 	}
 
-	if contextStore.contexts[12345] == nil {
+	if contextStore.contexts["test123"] == nil {
 		t.Error("EmitWithContext() context not saved")
 	}
 }
@@ -230,7 +230,7 @@ func TestBeacon_EmitWithContext_StoreError(t *testing.T) {
 
 	ctx := &mockContext{contextType: "tmux", json: []byte(`{}`)}
 
-	err := b.EmitWithContext(12345, "test message", ctx)
+	err := b.EmitWithContext("test123", "test message", ctx)
 	if err == nil {
 		t.Error("EmitWithContext() expected error, got nil")
 	}
@@ -244,7 +244,7 @@ func TestBeacon_EmitWithContext_ContextStoreError(t *testing.T) {
 
 	ctx := &mockContext{contextType: "tmux", json: []byte(`{}`)}
 
-	err := b.EmitWithContext(12345, "test message", ctx)
+	err := b.EmitWithContext("test123", "test message", ctx)
 	if err == nil {
 		t.Error("EmitWithContext() expected error, got nil")
 	}
@@ -256,45 +256,45 @@ func TestBeacon_EmitWithContext_NilContextStore(t *testing.T) {
 
 	ctx := &mockContext{contextType: "tmux", json: []byte(`{}`)}
 
-	err := b.EmitWithContext(12345, "test message", ctx)
+	err := b.EmitWithContext("test123", "test message", ctx)
 	if err != nil {
 		t.Fatalf("EmitWithContext() error = %v", err)
 	}
 
-	if store.states[12345] != "test message" {
-		t.Errorf("EmitWithContext() message = %q, want %q", store.states[12345], "test message")
+	if store.states["test123"] != "test message" {
+		t.Errorf("EmitWithContext() message = %q, want %q", store.states["test123"], "test message")
 	}
 }
 
 func TestBeacon_Silence_WithContextStore(t *testing.T) {
 	store := newMockStore()
-	store.states[12345] = "test message"
+	store.states["test123"] = "test message"
 	contextStore := newMockContextStore()
-	contextStore.contexts[12345] = &mockContext{contextType: "tmux"}
+	contextStore.contexts["test123"] = &mockContext{contextType: "tmux"}
 	b := NewWithContextStore(store, contextStore, nil)
 
-	err := b.Silence(12345)
+	err := b.Silence("test123")
 	if err != nil {
 		t.Fatalf("Silence() error = %v", err)
 	}
 
-	if _, exists := store.states[12345]; exists {
+	if _, exists := store.states["test123"]; exists {
 		t.Error("Silence() state still exists")
 	}
 
-	if _, exists := contextStore.contexts[12345]; exists {
+	if _, exists := contextStore.contexts["test123"]; exists {
 		t.Error("Silence() context still exists")
 	}
 }
 
 func TestBeacon_Silence_ContextStoreError(t *testing.T) {
 	store := newMockStore()
-	store.states[12345] = "test message"
+	store.states["test123"] = "test message"
 	contextStore := newMockContextStore()
 	contextStore.delErr = errors.New("context delete error")
 	b := NewWithContextStore(store, contextStore, nil)
 
-	err := b.Silence(12345)
+	err := b.Silence("test123")
 	if err == nil {
 		t.Error("Silence() expected error, got nil")
 	}

@@ -8,8 +8,7 @@ import (
 )
 
 func main() {
-	ppid := os.Getppid()
-	cli := cmd.NewCLI(ppid)
+	cli := cmd.NewCLI()
 	if err := cli.Execute(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

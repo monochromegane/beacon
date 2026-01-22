@@ -17,12 +17,12 @@ func TestFileContextStore_Write(t *testing.T) {
 		PaneID:      "%2",
 	}
 
-	err := store.Write(12345, ctx)
+	err := store.Write("test123", ctx)
 	if err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 
-	content, err := os.ReadFile(filepath.Join(tmpDir, "12345.json"))
+	content, err := os.ReadFile(filepath.Join(tmpDir, "test123.json"))
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
@@ -40,13 +40,13 @@ func TestFileContextStore_Write_Overwrite(t *testing.T) {
 	ctx1 := &TmuxContext{SessionName: "first", WindowIndex: 0, PaneIndex: 0, PaneID: "%0"}
 	ctx2 := &TmuxContext{SessionName: "second", WindowIndex: 1, PaneIndex: 2, PaneID: "%3"}
 
-	store.Write(12345, ctx1)
-	err := store.Write(12345, ctx2)
+	store.Write("test123", ctx1)
+	err := store.Write("test123", ctx2)
 	if err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 
-	content, err := os.ReadFile(filepath.Join(tmpDir, "12345.json"))
+	content, err := os.ReadFile(filepath.Join(tmpDir, "test123.json"))
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
@@ -62,14 +62,14 @@ func TestFileContextStore_Delete(t *testing.T) {
 	store := NewFileContextStoreWithDir(tmpDir)
 
 	ctx := &TmuxContext{SessionName: "main", WindowIndex: 0, PaneIndex: 0, PaneID: "%0"}
-	store.Write(12345, ctx)
+	store.Write("test123", ctx)
 
-	err := store.Delete(12345)
+	err := store.Delete("test123")
 	if err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 
-	_, err = os.Stat(filepath.Join(tmpDir, "12345.json"))
+	_, err = os.Stat(filepath.Join(tmpDir, "test123.json"))
 	if !os.IsNotExist(err) {
 		t.Errorf("Delete() file still exists")
 	}
@@ -79,7 +79,7 @@ func TestFileContextStore_Delete_NonExistent(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewFileContextStoreWithDir(tmpDir)
 
-	err := store.Delete(99999)
+	err := store.Delete("nonexistent")
 	if err != nil {
 		t.Errorf("Delete() error = %v, want nil for non-existent file", err)
 	}
@@ -95,9 +95,9 @@ func TestFileContextStore_Read(t *testing.T) {
 		PaneIndex:   1,
 		PaneID:      "%2",
 	}
-	store.Write(12345, ctx)
+	store.Write("test123", ctx)
 
-	data, err := store.Read(12345)
+	data, err := store.Read("test123")
 	if err != nil {
 		t.Fatalf("Read() error = %v", err)
 	}
@@ -112,7 +112,7 @@ func TestFileContextStore_Read_NonExistent(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewFileContextStoreWithDir(tmpDir)
 
-	_, err := store.Read(99999)
+	_, err := store.Read("nonexistent")
 	if err == nil {
 		t.Error("Read() expected error for non-existent file, got nil")
 	}

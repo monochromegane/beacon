@@ -31,29 +31,29 @@ func NewWithContextStore(store Store, contextStore context.ContextStore, out io.
 	}
 }
 
-// Emit creates or updates a beacon state file for the given PID.
-func (b *Beacon) Emit(pid int, message string) error {
-	return b.store.Write(pid, message)
+// Emit creates or updates a beacon state file for the given ID.
+func (b *Beacon) Emit(id string, message string) error {
+	return b.store.Write(id, message)
 }
 
-// EmitWithContext creates or updates a beacon state file and context file for the given PID.
-func (b *Beacon) EmitWithContext(pid int, message string, ctx context.Context) error {
-	if err := b.store.Write(pid, message); err != nil {
+// EmitWithContext creates or updates a beacon state file and context file for the given ID.
+func (b *Beacon) EmitWithContext(id string, message string, ctx context.Context) error {
+	if err := b.store.Write(id, message); err != nil {
 		return err
 	}
 	if b.contextStore != nil && ctx != nil {
-		return b.contextStore.Write(pid, ctx)
+		return b.contextStore.Write(id, ctx)
 	}
 	return nil
 }
 
-// Silence removes the beacon state file and context file for the given PID.
-func (b *Beacon) Silence(pid int) error {
-	if err := b.store.Delete(pid); err != nil {
+// Silence removes the beacon state file and context file for the given ID.
+func (b *Beacon) Silence(id string) error {
+	if err := b.store.Delete(id); err != nil {
 		return err
 	}
 	if b.contextStore != nil {
-		return b.contextStore.Delete(pid)
+		return b.contextStore.Delete(id)
 	}
 	return nil
 }
@@ -65,7 +65,7 @@ func (b *Beacon) List() error {
 		return err
 	}
 	for _, state := range states {
-		fmt.Fprintf(b.out, "%d\t%s\n", state.PID, state.Message)
+		fmt.Fprintf(b.out, "%s\t%s\n", state.ID, state.Message)
 	}
 	return nil
 }

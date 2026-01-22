@@ -3,7 +3,6 @@ package beacon
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/monochromegane/beacon/internal/storage"
@@ -11,14 +10,14 @@ import (
 
 // State represents the content of a beacon state file.
 type State struct {
-	PID     int
+	ID      string
 	Message string
 }
 
 // Store is an interface for file operations (mockable for tests).
 type Store interface {
-	Write(pid int, message string) error
-	Delete(pid int) error
+	Write(id string, message string) error
+	Delete(id string) error
 	List() ([]State, error)
 }
 
@@ -41,19 +40,19 @@ func NewFileStoreWithDir(baseDir string) *FileStore {
 	return &FileStore{baseDir: baseDir}
 }
 
-// Write creates or updates a state file for the given PID.
-func (s *FileStore) Write(pid int, message string) error {
+// Write creates or updates a state file for the given ID.
+func (s *FileStore) Write(id string, message string) error {
 	if err := os.MkdirAll(s.baseDir, 0755); err != nil {
 		return err
 	}
-	path := filepath.Join(s.baseDir, strconv.Itoa(pid))
+	path := filepath.Join(s.baseDir, id)
 	return os.WriteFile(path, []byte(message), 0644)
 }
 
-// Delete removes the state file for the given PID.
+// Delete removes the state file for the given ID.
 // Returns nil if the file does not exist (idempotent).
-func (s *FileStore) Delete(pid int) error {
-	path := filepath.Join(s.baseDir, strconv.Itoa(pid))
+func (s *FileStore) Delete(id string) error {
+	path := filepath.Join(s.baseDir, id)
 	err := os.Remove(path)
 	if os.IsNotExist(err) {
 		return nil
@@ -77,16 +76,17 @@ func (s *FileStore) List() ([]State, error) {
 		if entry.IsDir() {
 			continue
 		}
-		pid, err := strconv.Atoi(entry.Name())
-		if err != nil {
+		name := entry.Name()
+		// Skip JSON context files
+		if strings.HasSuffix(name, ".json") {
 			continue
 		}
-		content, err := os.ReadFile(filepath.Join(s.baseDir, entry.Name()))
+		content, err := os.ReadFile(filepath.Join(s.baseDir, name))
 		if err != nil {
 			continue
 		}
 		states = append(states, State{
-			PID:     pid,
+			ID:      name,
 			Message: strings.TrimSpace(string(content)),
 		})
 	}

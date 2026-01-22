@@ -16,6 +16,7 @@ import (
 const cmdName = "beacon"
 
 type EmitCmd struct {
+	ID      string `name:"id" required:"" help:"Session identifier"`
 	Message string `arg:"" help:"Message to emit"`
 	Context string `name:"context" short:"c" help:"Context type (tmux)" enum:",tmux" default:""`
 }
@@ -27,24 +28,26 @@ func (c *EmitCmd) Run(cli *CLI) error {
 	}
 
 	if c.Context == "" {
-		return b.Emit(cli.ppid, c.Message)
+		return b.Emit(c.ID, c.Message)
 	}
 
 	ctx, err := cli.getContext(c.Context)
 	if err != nil {
 		return err
 	}
-	return b.EmitWithContext(cli.ppid, c.Message, ctx)
+	return b.EmitWithContext(c.ID, c.Message, ctx)
 }
 
-type SilenceCmd struct{}
+type SilenceCmd struct {
+	ID string `name:"id" required:"" help:"Session identifier"`
+}
 
 func (c *SilenceCmd) Run(cli *CLI) error {
 	b, err := cli.newBeacon()
 	if err != nil {
 		return err
 	}
-	return b.Silence(cli.ppid)
+	return b.Silence(c.ID)
 }
 
 type ListCmd struct{}
@@ -58,7 +61,7 @@ func (c *ListCmd) Run(cli *CLI) error {
 }
 
 type ContextCmd struct {
-	PID      int    `arg:"" help:"Process ID to read context for"`
+	ID       string `arg:"" help:"Session identifier to read context for"`
 	Template string `name:"template" short:"t" help:"Go text/template string for custom formatting" default:""`
 }
 
@@ -68,7 +71,7 @@ func (c *ContextCmd) Run(cli *CLI) error {
 		return err
 	}
 
-	data, err := store.Read(c.PID)
+	data, err := store.Read(c.ID)
 	if err != nil {
 		return err
 	}
@@ -100,18 +103,15 @@ type CLI struct {
 	Emit    EmitCmd          `cmd:"" help:"Emit a beacon signal"`
 	Silence SilenceCmd       `cmd:"" help:"Silence the beacon"`
 	List    ListCmd          `cmd:"" help:"List all active beacons"`
-	Context ContextCmd       `cmd:"" help:"Display context for a process"`
+	Context ContextCmd       `cmd:"" help:"Display context for a session"`
 
-	ppid         int
 	store        beacon.Store
 	contextStore context.ContextStore
 	out          io.Writer
 }
 
-func NewCLI(ppid int) *CLI {
-	return &CLI{
-		ppid: ppid,
-	}
+func NewCLI() *CLI {
+	return &CLI{}
 }
 
 func (c *CLI) initDefaults() error {
