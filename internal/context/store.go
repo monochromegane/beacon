@@ -3,16 +3,15 @@ package context
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/monochromegane/beacon/internal/storage"
 )
 
 // ContextStore handles persistence of context information as JSON files.
 type ContextStore interface {
-	Write(pid int, ctx Context) error
-	Delete(pid int) error
-	Read(pid int) ([]byte, error)
+	Write(id string, ctx Context) error
+	Delete(id string) error
+	Read(id string) ([]byte, error)
 }
 
 // FileContextStore is the file-based implementation of ContextStore.
@@ -34,8 +33,8 @@ func NewFileContextStoreWithDir(baseDir string) *FileContextStore {
 	return &FileContextStore{baseDir: baseDir}
 }
 
-// Write saves the context as a JSON file for the given PID.
-func (s *FileContextStore) Write(pid int, ctx Context) error {
+// Write saves the context as a JSON file for the given ID.
+func (s *FileContextStore) Write(id string, ctx Context) error {
 	if err := os.MkdirAll(s.baseDir, 0755); err != nil {
 		return err
 	}
@@ -43,14 +42,14 @@ func (s *FileContextStore) Write(pid int, ctx Context) error {
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(s.baseDir, strconv.Itoa(pid)+".json")
+	path := filepath.Join(s.baseDir, id+".json")
 	return os.WriteFile(path, data, 0644)
 }
 
-// Delete removes the context JSON file for the given PID.
+// Delete removes the context JSON file for the given ID.
 // Returns nil if the file does not exist (idempotent).
-func (s *FileContextStore) Delete(pid int) error {
-	path := filepath.Join(s.baseDir, strconv.Itoa(pid)+".json")
+func (s *FileContextStore) Delete(id string) error {
+	path := filepath.Join(s.baseDir, id+".json")
 	err := os.Remove(path)
 	if os.IsNotExist(err) {
 		return nil
@@ -58,8 +57,8 @@ func (s *FileContextStore) Delete(pid int) error {
 	return err
 }
 
-// Read returns the raw JSON content of the context file for the given PID.
-func (s *FileContextStore) Read(pid int) ([]byte, error) {
-	path := filepath.Join(s.baseDir, strconv.Itoa(pid)+".json")
+// Read returns the raw JSON content of the context file for the given ID.
+func (s *FileContextStore) Read(id string) ([]byte, error) {
+	path := filepath.Join(s.baseDir, id+".json")
 	return os.ReadFile(path)
 }
