@@ -66,8 +66,7 @@ func (s *Scanner) ScanSessions(signals []*signal.Signal) ([]WindowInfo, error) {
 	}
 
 	var allWindows []WindowInfo
-	sessions := strings.Split(strings.TrimSpace(string(sessionOutput)), "\n")
-	for _, sessionName := range sessions {
+	for sessionName := range strings.SplitSeq(strings.TrimSpace(string(sessionOutput)), "\n") {
 		if sessionName == "" {
 			continue
 		}
@@ -108,28 +107,35 @@ func (s *Scanner) parseWindowsAndMatchSignals(sessionName, output string, signal
 			WindowIndex: windowIndex,
 			WindowName:  parts[1],
 			WindowID:    parts[2],
-		}
-
-		// Match signals to this window based on environment
-		for _, sig := range signals {
-			if sig.Environment != nil &&
-				sig.Environment.Type == "tmux" &&
-				sig.Environment.SessionName == sessionName &&
-				sig.Environment.WindowIndex == windowIndex {
-				window.Signals = append(window.Signals, SignalInfo{
-					SessionID:     sig.SessionID,
-					State:         string(sig.State),
-					Message:       sig.Message,
-					CustomMessage: sig.CustomMessage,
-					PaneIndex:     sig.Environment.PaneIndex,
-					PaneID:        sig.Environment.PaneID,
-					PaneTitle:     sig.Environment.PaneTitle,
-				})
-			}
+			Signals:     matchSignalsToWindow(signals, sessionName, windowIndex),
 		}
 
 		windows = append(windows, window)
 	}
 
 	return windows, nil
+}
+
+// matchSignalsToWindow finds all signals that belong to a specific tmux window.
+func matchSignalsToWindow(signals []*signal.Signal, sessionName string, windowIndex int) []SignalInfo {
+	var matched []SignalInfo
+	for _, sig := range signals {
+		env := sig.Environment
+		if env == nil || env.Type != "tmux" {
+			continue
+		}
+		if env.SessionName != sessionName || env.WindowIndex != windowIndex {
+			continue
+		}
+		matched = append(matched, SignalInfo{
+			SessionID:     sig.SessionID,
+			State:         string(sig.State),
+			Message:       sig.Message,
+			CustomMessage: sig.CustomMessage,
+			PaneIndex:     env.PaneIndex,
+			PaneID:        env.PaneID,
+			PaneTitle:     env.PaneTitle,
+		})
+	}
+	return matched
 }

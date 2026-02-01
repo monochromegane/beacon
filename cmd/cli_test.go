@@ -57,25 +57,26 @@ type mockTmuxExecutor struct {
 }
 
 func (m *mockTmuxExecutor) Execute(name string, args ...string) ([]byte, error) {
-	key := name
-	for _, arg := range args {
-		key += " " + arg
-	}
+	key := name + " " + strings.Join(args, " ")
 	if output, ok := m.outputs[key]; ok {
 		return output, nil
 	}
 	return []byte{}, nil
 }
 
-func TestCLI_Emit_SessionStart(t *testing.T) {
-	store := newMockSignalStore()
+func newTestCLI(store *mockSignalStore, input string) (*CLI, *bytes.Buffer) {
 	var buf bytes.Buffer
 	cli := NewCLI()
 	cli.signalStore = store
 	cli.out = &buf
-	cli.in = strings.NewReader(`{"session_id":"test123","hook_event_name":"SessionStart","source":"cli"}`)
+	cli.in = strings.NewReader(input)
+	return cli, &buf
+}
 
-	// Emit without tmux context (Env="")
+func TestCLI_Emit_SessionStart(t *testing.T) {
+	store := newMockSignalStore()
+	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"SessionStart","source":"cli"}`)
+
 	err := cli.Execute([]string{"emit", "--env", ""})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -95,11 +96,7 @@ func TestCLI_Emit_SessionStart(t *testing.T) {
 
 func TestCLI_Emit_UserPromptSubmit(t *testing.T) {
 	store := newMockSignalStore()
-	var buf bytes.Buffer
-	cli := NewCLI()
-	cli.signalStore = store
-	cli.out = &buf
-	cli.in = strings.NewReader(`{"session_id":"test123","hook_event_name":"UserPromptSubmit"}`)
+	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"UserPromptSubmit"}`)
 
 	err := cli.Execute([]string{"emit", "--env", ""})
 	if err != nil {
@@ -117,11 +114,7 @@ func TestCLI_Emit_UserPromptSubmit(t *testing.T) {
 
 func TestCLI_Emit_Stop(t *testing.T) {
 	store := newMockSignalStore()
-	var buf bytes.Buffer
-	cli := NewCLI()
-	cli.signalStore = store
-	cli.out = &buf
-	cli.in = strings.NewReader(`{"session_id":"test123","hook_event_name":"Stop"}`)
+	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"Stop"}`)
 
 	err := cli.Execute([]string{"emit", "--env", ""})
 	if err != nil {
@@ -139,25 +132,19 @@ func TestCLI_Emit_Stop(t *testing.T) {
 
 func TestCLI_Emit_SessionEnd(t *testing.T) {
 	store := newMockSignalStore()
-	// Pre-populate with existing signal
 	store.signals["claude_test123"] = &signal.Signal{
 		SessionID:  "test123",
 		SignalType: "claude",
 		State:      signal.StateRunning,
 	}
 
-	var buf bytes.Buffer
-	cli := NewCLI()
-	cli.signalStore = store
-	cli.out = &buf
-	cli.in = strings.NewReader(`{"session_id":"test123","hook_event_name":"SessionEnd"}`)
+	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"SessionEnd"}`)
 
 	err := cli.Execute([]string{"emit", "--env", ""})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
-	// Signal should be deleted
 	if _, exists := store.signals["claude_test123"]; exists {
 		t.Error("Signal should have been deleted")
 	}
@@ -165,11 +152,7 @@ func TestCLI_Emit_SessionEnd(t *testing.T) {
 
 func TestCLI_Emit_WithCustomMessage(t *testing.T) {
 	store := newMockSignalStore()
-	var buf bytes.Buffer
-	cli := NewCLI()
-	cli.signalStore = store
-	cli.out = &buf
-	cli.in = strings.NewReader(`{"session_id":"test123","hook_event_name":"UserPromptSubmit"}`)
+	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"UserPromptSubmit"}`)
 
 	err := cli.Execute([]string{"emit", "--env", "", "custom message"})
 	if err != nil {
@@ -187,11 +170,7 @@ func TestCLI_Emit_WithCustomMessage(t *testing.T) {
 
 func TestCLI_Emit_Notification_PermissionPrompt(t *testing.T) {
 	store := newMockSignalStore()
-	var buf bytes.Buffer
-	cli := NewCLI()
-	cli.signalStore = store
-	cli.out = &buf
-	cli.in = strings.NewReader(`{"session_id":"test123","hook_event_name":"Notification","notification_type":"permission_prompt"}`)
+	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"Notification","notification_type":"permission_prompt"}`)
 
 	err := cli.Execute([]string{"emit", "--env", ""})
 	if err != nil {
@@ -343,11 +322,7 @@ func TestCLI_Scan_SessionScope(t *testing.T) {
 
 func TestCLI_Emit_InvalidJSON(t *testing.T) {
 	store := newMockSignalStore()
-	var buf bytes.Buffer
-	cli := NewCLI()
-	cli.signalStore = store
-	cli.out = &buf
-	cli.in = strings.NewReader(`{invalid}`)
+	cli, _ := newTestCLI(store, `{invalid}`)
 
 	err := cli.Execute([]string{"emit", "--env", ""})
 	if err == nil {

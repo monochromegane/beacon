@@ -116,12 +116,11 @@ func (c *ScanCmd) Run(cli *CLI) error {
 // outputDefault outputs in default format: {window_index}:{window_name}:{comma_separated_states}
 func (c *ScanCmd) outputDefault(out io.Writer, windows []tmux.WindowInfo) error {
 	for _, w := range windows {
-		var states []string
-		for _, s := range w.Signals {
-			states = append(states, s.State)
+		states := make([]string, len(w.Signals))
+		for i, s := range w.Signals {
+			states[i] = s.State
 		}
-		statesStr := strings.Join(states, ",")
-		fmt.Fprintf(out, "%d:%s:%s\n", w.WindowIndex, w.WindowName, statesStr)
+		fmt.Fprintf(out, "%d:%s:%s\n", w.WindowIndex, w.WindowName, strings.Join(states, ","))
 	}
 	return nil
 }

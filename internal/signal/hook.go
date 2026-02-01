@@ -37,12 +37,7 @@ func MapEventToState(event *HookEvent) HookEventResult {
 			State:   StateStarted,
 			Message: "claude:started:" + event.Source,
 		}
-	case "UserPromptSubmit":
-		return HookEventResult{
-			State:   StateRunning,
-			Message: "claude:running",
-		}
-	case "PreToolUse":
+	case "UserPromptSubmit", "PreToolUse":
 		return HookEventResult{
 			State:   StateRunning,
 			Message: "claude:running",

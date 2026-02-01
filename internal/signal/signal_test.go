@@ -54,6 +54,18 @@ func TestSignalFields(t *testing.T) {
 	if sig.State != StateRunning {
 		t.Errorf("State = %q, want %q", sig.State, StateRunning)
 	}
+	if sig.Message != "claude:running" {
+		t.Errorf("Message = %q, want %q", sig.Message, "claude:running")
+	}
+	if sig.CustomMessage != "custom" {
+		t.Errorf("CustomMessage = %q, want %q", sig.CustomMessage, "custom")
+	}
+	if sig.Source != "cli" {
+		t.Errorf("Source = %q, want %q", sig.Source, "cli")
+	}
+	if sig.UpdatedAt != now {
+		t.Errorf("UpdatedAt = %v, want %v", sig.UpdatedAt, now)
+	}
 	if sig.Environment.Type != "tmux" {
 		t.Errorf("Environment.Type = %q, want %q", sig.Environment.Type, "tmux")
 	}
