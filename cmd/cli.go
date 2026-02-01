@@ -1,165 +1,218 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/template"
+	"time"
 
 	"github.com/alecthomas/kong"
-	"github.com/monochromegane/beacon/internal/beacon"
-	"github.com/monochromegane/beacon/internal/context"
+	"github.com/monochromegane/beacon/internal/signal"
+	"github.com/monochromegane/beacon/internal/tmux"
 )
 
 const cmdName = "beacon"
 
+// EmitCmd emits a beacon signal based on hook events from stdin.
 type EmitCmd struct {
-	ID      string `name:"id" required:"" help:"Session identifier"`
-	Message string `arg:"" help:"Message to emit"`
-	Context string `name:"context" short:"c" help:"Context type (tmux)" enum:",tmux" default:""`
+	Signal  string `name:"signal" short:"S" help:"Signal type" default:"claude" enum:"claude"`
+	Env     string `name:"env" short:"E" help:"Environment type" default:"tmux" enum:"tmux,"`
+	Message string `arg:"" optional:"" help:"Optional custom message"`
 }
 
 func (c *EmitCmd) Run(cli *CLI) error {
-	b, err := cli.newBeacon()
+	// Parse hook event from stdin
+	event, err := signal.ParseHookEvent(cli.in)
+	if err != nil {
+		return fmt.Errorf("failed to parse hook event: %w", err)
+	}
+
+	// Map event to state
+	result := signal.MapEventToState(event)
+
+	// If SessionEnd, delete signal and exit
+	if result.ShouldDelete {
+		store, err := cli.getSignalStore()
+		if err != nil {
+			return err
+		}
+		return store.Delete(c.Signal, event.SessionID)
+	}
+
+	// Get environment if specified
+	var env *signal.Environment
+	if c.Env == "tmux" {
+		provider := cli.getTmuxContextProvider()
+		env, err = provider.GetEnvironment()
+		if err != nil && !errors.Is(err, tmux.ErrNotInTmux) {
+			return err
+		}
+	}
+
+	// Create signal
+	sig := &signal.Signal{
+		SessionID:     event.SessionID,
+		SignalType:    c.Signal,
+		State:         result.State,
+		Message:       result.Message,
+		CustomMessage: c.Message,
+		Source:        event.Source,
+		UpdatedAt:     time.Now(),
+		Environment:   env,
+	}
+
+	// Save signal
+	store, err := cli.getSignalStore()
 	if err != nil {
 		return err
 	}
-
-	if c.Context == "" {
-		return b.Emit(c.ID, c.Message)
-	}
-
-	ctx, err := cli.getContext(c.Context)
-	if err != nil {
-		return err
-	}
-	return b.EmitWithContext(c.ID, c.Message, ctx)
+	return store.Write(sig)
 }
 
-type SilenceCmd struct {
-	ID string `name:"id" required:"" help:"Session identifier"`
+// ScanCmd scans tmux windows/sessions for signals.
+type ScanCmd struct {
+	Signal   string `name:"signal" short:"S" help:"Signal type" default:"claude" enum:"claude"`
+	Env      string `name:"env" short:"E" help:"Environment type" default:"tmux" enum:"tmux"`
+	Scope    string `name:"scope" short:"s" help:"Scan scope" default:"window" enum:"window,session"`
+	Template string `name:"template" short:"t" help:"Go template for output"`
 }
 
-func (c *SilenceCmd) Run(cli *CLI) error {
-	b, err := cli.newBeacon()
+func (c *ScanCmd) Run(cli *CLI) error {
+	store, err := cli.getSignalStore()
 	if err != nil {
 		return err
 	}
-	return b.Silence(c.ID)
+
+	signals, err := store.List(c.Signal)
+	if err != nil {
+		return err
+	}
+
+	scanner := cli.getTmuxScanner()
+	var windows []tmux.WindowInfo
+
+	switch c.Scope {
+	case "window":
+		windows, err = scanner.ScanWindows(signals)
+	case "session":
+		windows, err = scanner.ScanSessions(signals)
+	}
+	if err != nil {
+		return err
+	}
+
+	// Output
+	if c.Template != "" {
+		return c.outputWithTemplate(cli.out, windows)
+	}
+	return c.outputDefault(cli.out, windows)
 }
 
-type ListCmd struct{}
-
-func (c *ListCmd) Run(cli *CLI) error {
-	b, err := cli.newBeacon()
-	if err != nil {
-		return err
+// outputDefault outputs in default format: {window_index}:{window_name}:{comma_separated_states}
+func (c *ScanCmd) outputDefault(out io.Writer, windows []tmux.WindowInfo) error {
+	for _, w := range windows {
+		states := make([]string, len(w.Signals))
+		for i, s := range w.Signals {
+			states[i] = s.State
+		}
+		fmt.Fprintf(out, "%d:%s:%s\n", w.WindowIndex, w.WindowName, strings.Join(states, ","))
 	}
-	return b.List()
-}
-
-type ContextCmd struct {
-	ID       string `arg:"" help:"Session identifier to read context for"`
-	Template string `name:"template" short:"t" help:"Go text/template string for custom formatting" default:""`
-}
-
-func (c *ContextCmd) Run(cli *CLI) error {
-	store, err := cli.getContextStore()
-	if err != nil {
-		return err
-	}
-
-	data, err := store.Read(c.ID)
-	if err != nil {
-		return err
-	}
-
-	if c.Template == "" {
-		fmt.Fprintln(cli.out, string(data))
-		return nil
-	}
-
-	var m map[string]any
-	if err := json.Unmarshal(data, &m); err != nil {
-		return err
-	}
-
-	tmpl, err := template.New("context").Parse(c.Template)
-	if err != nil {
-		return err
-	}
-
-	if err := tmpl.Execute(cli.out, m); err != nil {
-		return err
-	}
-	fmt.Fprintln(cli.out)
 	return nil
 }
 
-type CLI struct {
-	Version kong.VersionFlag `help:"Show version"`
-	Emit    EmitCmd          `cmd:"" help:"Emit a beacon signal"`
-	Silence SilenceCmd       `cmd:"" help:"Silence the beacon"`
-	List    ListCmd          `cmd:"" help:"List all active beacons"`
-	Context ContextCmd       `cmd:"" help:"Display context for a session"`
+// outputWithTemplate outputs using a Go template.
+func (c *ScanCmd) outputWithTemplate(out io.Writer, windows []tmux.WindowInfo) error {
+	tmpl, err := template.New("scan").Parse(c.Template)
+	if err != nil {
+		return err
+	}
 
-	store        beacon.Store
-	contextStore context.ContextStore
-	out          io.Writer
+	for _, w := range windows {
+		// Convert window to map for template
+		data := map[string]any{
+			"SessionName": w.SessionName,
+			"WindowIndex": w.WindowIndex,
+			"WindowName":  w.WindowName,
+			"WindowID":    w.WindowID,
+			"Signals":     w.Signals,
+		}
+		// Also provide JSON of signals for advanced processing
+		signalsJSON, _ := json.Marshal(w.Signals)
+		data["SignalsJSON"] = string(signalsJSON)
+
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, data); err != nil {
+			return err
+		}
+		// Only output if template produced non-empty result
+		if result := strings.TrimSpace(buf.String()); result != "" {
+			fmt.Fprintln(out, result)
+		}
+	}
+	return nil
 }
 
+// CLI represents the beacon command-line interface.
+type CLI struct {
+	Version kong.VersionFlag `help:"Show version"`
+	Emit    EmitCmd          `cmd:"" help:"Emit a beacon signal from hook event"`
+	Scan    ScanCmd          `cmd:"" help:"Scan for beacon signals in tmux"`
+
+	signalStore         signal.Store
+	tmuxContextProvider *tmux.ContextProvider
+	tmuxScanner         *tmux.Scanner
+	in                  io.Reader
+	out                 io.Writer
+}
+
+// NewCLI creates a new CLI instance.
 func NewCLI() *CLI {
 	return &CLI{}
 }
 
-func (c *CLI) initDefaults() error {
-	if c.contextStore == nil {
-		contextStore, err := context.NewFileContextStore()
+func (c *CLI) getSignalStore() (signal.Store, error) {
+	if c.signalStore == nil {
+		store, err := signal.NewFileStore()
 		if err != nil {
-			return err
+			return nil, err
 		}
-		c.contextStore = contextStore
+		c.signalStore = store
+	}
+	return c.signalStore, nil
+}
+
+func (c *CLI) getTmuxContextProvider() *tmux.ContextProvider {
+	if c.tmuxContextProvider == nil {
+		c.tmuxContextProvider = tmux.NewContextProvider()
+	}
+	return c.tmuxContextProvider
+}
+
+func (c *CLI) getTmuxScanner() *tmux.Scanner {
+	if c.tmuxScanner == nil {
+		c.tmuxScanner = tmux.NewScanner()
+	}
+	return c.tmuxScanner
+}
+
+func (c *CLI) initDefaults() {
+	if c.in == nil {
+		c.in = os.Stdin
 	}
 	if c.out == nil {
 		c.out = os.Stdout
 	}
-	return nil
 }
 
-func (c *CLI) newBeacon() (*beacon.Beacon, error) {
-	if c.store == nil {
-		store, err := beacon.NewFileStore()
-		if err != nil {
-			return nil, err
-		}
-		c.store = store
-	}
-	if err := c.initDefaults(); err != nil {
-		return nil, err
-	}
-	return beacon.NewWithContextStore(c.store, c.contextStore, c.out), nil
-}
-
-func (c *CLI) getContextStore() (context.ContextStore, error) {
-	if err := c.initDefaults(); err != nil {
-		return nil, err
-	}
-	return c.contextStore, nil
-}
-
-func (c *CLI) getContext(contextType string) (context.Context, error) {
-	switch contextType {
-	case "tmux":
-		provider := context.NewTmuxProvider()
-		return provider.GetContext()
-	default:
-		return nil, errors.New("unknown context type: " + contextType)
-	}
-}
-
+// Execute runs the CLI with the given arguments.
 func (c *CLI) Execute(args []string) error {
+	c.initDefaults()
+
 	parser, err := kong.New(c,
 		kong.Name(cmdName),
 		kong.Description("A CLI tool for managing coding agent states"),
