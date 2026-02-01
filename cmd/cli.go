@@ -120,7 +120,7 @@ func (c *ScanCmd) outputDefault(out io.Writer, windows []tmux.WindowInfo) error 
 		for i, s := range w.Signals {
 			states[i] = s.State
 		}
-		fmt.Fprintf(out, "%d:%s:%s\n", w.WindowIndex, w.WindowName, strings.Join(states, ","))
+		fmt.Fprintf(out, "%d: %s:%s\n", w.WindowIndex, w.WindowName, strings.Join(states, ","))
 	}
 	return nil
 }
