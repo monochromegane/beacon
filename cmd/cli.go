@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
+	"github.com/monochromegane/beacon/internal/output"
 	"github.com/monochromegane/beacon/internal/signal"
 	"github.com/monochromegane/beacon/internal/tmux"
 )
@@ -80,6 +81,7 @@ type ScanCmd struct {
 	Env      string `name:"env" short:"E" help:"Environment type" default:"tmux" enum:"tmux"`
 	Scope    string `name:"scope" short:"s" help:"Scan scope" default:"window" enum:"window,session"`
 	Template string `name:"template" short:"t" help:"Go template for output"`
+	Color    string `name:"color" help:"Color output: always, auto, never" default:"auto" enum:"always,auto,never"`
 }
 
 func (c *ScanCmd) Run(cli *CLI) error {
@@ -118,36 +120,26 @@ func (c *ScanCmd) Run(cli *CLI) error {
 	return nil
 }
 
-// outputWindowsDefault outputs windows in default format: {window_index}: {window_name} ({pane_count} panes) {states}
+// outputWindowsDefault outputs windows in the new format with priority sorting and colors.
 func (c *ScanCmd) outputWindowsDefault(out io.Writer, windows []tmux.WindowInfo) error {
+	useColor := output.ShouldUseColor(c.Color)
+	scheme := output.NewColorScheme(useColor)
+	formatter := output.NewFormatter(scheme)
+
 	for _, w := range windows {
-		states := make([]string, len(w.Signals))
-		for i, s := range w.Signals {
-			states[i] = s.State
-		}
-		statesStr := strings.Join(states, ", ")
-		if statesStr != "" {
-			fmt.Fprintf(out, "%d: %s (%d panes) %s\n", w.WindowIndex, w.WindowName, w.PaneCount, statesStr)
-		} else {
-			fmt.Fprintf(out, "%d: %s (%d panes)\n", w.WindowIndex, w.WindowName, w.PaneCount)
-		}
+		fmt.Fprintln(out, formatter.FormatWindow(w))
 	}
 	return nil
 }
 
-// outputSessionsDefault outputs sessions in default format: {session_name}: {window_count} windows {states}
+// outputSessionsDefault outputs sessions in the new format with priority sorting and colors.
 func (c *ScanCmd) outputSessionsDefault(out io.Writer, sessions []tmux.SessionInfo) error {
+	useColor := output.ShouldUseColor(c.Color)
+	scheme := output.NewColorScheme(useColor)
+	formatter := output.NewFormatter(scheme)
+
 	for _, s := range sessions {
-		states := make([]string, len(s.Signals))
-		for i, sig := range s.Signals {
-			states[i] = sig.State
-		}
-		statesStr := strings.Join(states, ", ")
-		if statesStr != "" {
-			fmt.Fprintf(out, "%s: %d windows %s\n", s.SessionName, s.WindowCount, statesStr)
-		} else {
-			fmt.Fprintf(out, "%s: %d windows\n", s.SessionName, s.WindowCount)
-		}
+		fmt.Fprintln(out, formatter.FormatSession(s))
 	}
 	return nil
 }

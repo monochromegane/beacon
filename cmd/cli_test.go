@@ -200,6 +200,7 @@ func TestCLI_Scan_Default(t *testing.T) {
 			WindowIndex: 0,
 			PaneIndex:   0,
 			PaneID:      "%0",
+			PaneTitle:   "Building",
 		},
 	}
 
@@ -218,14 +219,15 @@ func TestCLI_Scan_Default(t *testing.T) {
 	cli.out = &buf
 	cli.in = strings.NewReader("")
 
-	err := cli.Execute([]string{"scan"})
+	err := cli.Execute([]string{"scan", "--color=never"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "0: bash (2 panes) running") {
-		t.Errorf("Output = %q, want to contain %q", output, "0: bash (2 panes) running")
+	// New format: {window_index}: {window_name} ({pane_count} panes) | {state}: "{title}"
+	if !strings.Contains(output, `0: bash (2 panes) | running: "Building"`) {
+		t.Errorf("Output = %q, want to contain %q", output, `0: bash (2 panes) | running: "Building"`)
 	}
 	if !strings.Contains(output, "1: vim (1 panes)") {
 		t.Errorf("Output = %q, want to contain %q", output, "1: vim (1 panes)")
@@ -289,6 +291,7 @@ func TestCLI_Scan_SessionScope(t *testing.T) {
 			WindowIndex: 0,
 			PaneIndex:   0,
 			PaneID:      "%0",
+			PaneTitle:   "Building",
 		},
 	}
 
@@ -306,15 +309,15 @@ func TestCLI_Scan_SessionScope(t *testing.T) {
 	cli.out = &buf
 	cli.in = strings.NewReader("")
 
-	err := cli.Execute([]string{"scan", "--scope", "session"})
+	err := cli.Execute([]string{"scan", "--scope", "session", "--color=never"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	output := buf.String()
-	// work session should have signal
-	if !strings.Contains(output, "work: 2 windows running") {
-		t.Errorf("Output = %q, want to contain %q", output, "work: 2 windows running")
+	// work session should have signal with new format
+	if !strings.Contains(output, `work: 2 windows | running: "Building"`) {
+		t.Errorf("Output = %q, want to contain %q", output, `work: 2 windows | running: "Building"`)
 	}
 	// main session should have no signals
 	if !strings.Contains(output, "main: 1 windows") {
