@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"bytes"
-	"os"
+	"strings"
 	"testing"
+	"time"
 
-	"github.com/monochromegane/beacon/internal/beacon"
-	"github.com/monochromegane/beacon/internal/context"
+	"github.com/monochromegane/beacon/internal/signal"
+	"github.com/monochromegane/beacon/internal/tmux"
 )
 
 func TestNewCLI(t *testing.T) {
@@ -16,222 +17,340 @@ func TestNewCLI(t *testing.T) {
 	}
 }
 
-type mockStore struct {
-	states map[string]string
+type mockSignalStore struct {
+	signals map[string]*signal.Signal
 }
 
-func newMockStore() *mockStore {
-	return &mockStore{states: make(map[string]string)}
+func newMockSignalStore() *mockSignalStore {
+	return &mockSignalStore{signals: make(map[string]*signal.Signal)}
 }
 
-func (m *mockStore) Write(id string, message string) error {
-	m.states[id] = message
+func (m *mockSignalStore) Write(sig *signal.Signal) error {
+	key := sig.SignalType + "_" + sig.SessionID
+	m.signals[key] = sig
 	return nil
 }
 
-func (m *mockStore) Delete(id string) error {
-	delete(m.states, id)
+func (m *mockSignalStore) Delete(signalType, sessionID string) error {
+	key := signalType + "_" + sessionID
+	delete(m.signals, key)
 	return nil
 }
 
-func (m *mockStore) List() ([]beacon.State, error) {
-	var states []beacon.State
-	for id, msg := range m.states {
-		states = append(states, beacon.State{ID: id, Message: msg})
-	}
-	return states, nil
+func (m *mockSignalStore) Read(signalType, sessionID string) (*signal.Signal, error) {
+	key := signalType + "_" + sessionID
+	return m.signals[key], nil
 }
 
-type mockContextStore struct {
-	contexts map[string]context.Context
-}
-
-func newMockContextStore() *mockContextStore {
-	return &mockContextStore{contexts: make(map[string]context.Context)}
-}
-
-func (m *mockContextStore) Write(id string, ctx context.Context) error {
-	m.contexts[id] = ctx
-	return nil
-}
-
-func (m *mockContextStore) Delete(id string) error {
-	delete(m.contexts, id)
-	return nil
-}
-
-func (m *mockContextStore) Read(id string) ([]byte, error) {
-	ctx, ok := m.contexts[id]
-	if !ok {
-		return nil, os.ErrNotExist
-	}
-	return ctx.ToJSON()
-}
-
-func TestCLI_Emit(t *testing.T) {
-	store := newMockStore()
-	contextStore := newMockContextStore()
-	cli := NewCLI()
-	cli.store = store
-	cli.contextStore = contextStore
-
-	err := cli.Execute([]string{"emit", "--id", "test123", "test message"})
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-
-	if store.states["test123"] != "test message" {
-		t.Errorf("Emit message = %q, want %q", store.states["test123"], "test message")
-	}
-}
-
-func TestCLI_Silence(t *testing.T) {
-	store := newMockStore()
-	store.states["test123"] = "existing message"
-	contextStore := newMockContextStore()
-	cli := NewCLI()
-	cli.store = store
-	cli.contextStore = contextStore
-
-	err := cli.Execute([]string{"silence", "--id", "test123"})
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-
-	if _, exists := store.states["test123"]; exists {
-		t.Error("Silence did not delete the state")
-	}
-}
-
-func TestCLI_List(t *testing.T) {
-	store := newMockStore()
-	store.states["test123"] = "message 1"
-	contextStore := newMockContextStore()
-	var buf bytes.Buffer
-	cli := NewCLI()
-	cli.store = store
-	cli.contextStore = contextStore
-	cli.out = &buf
-
-	err := cli.Execute([]string{"list"})
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-
-	expected := "test123\tmessage 1\n"
-	if buf.String() != expected {
-		t.Errorf("List output = %q, want %q", buf.String(), expected)
-	}
-}
-
-func TestCLI_Emit_WithContext_NotInTmux(t *testing.T) {
-	originalTmux := os.Getenv("TMUX")
-	os.Unsetenv("TMUX")
-	defer func() {
-		if originalTmux != "" {
-			os.Setenv("TMUX", originalTmux)
+func (m *mockSignalStore) List(signalType string) ([]*signal.Signal, error) {
+	var result []*signal.Signal
+	for key, sig := range m.signals {
+		if strings.HasPrefix(key, signalType+"_") {
+			result = append(result, sig)
 		}
-	}()
-
-	store := newMockStore()
-	contextStore := newMockContextStore()
-	cli := NewCLI()
-	cli.store = store
-	cli.contextStore = contextStore
-
-	err := cli.Execute([]string{"emit", "--id", "test123", "--context", "tmux", "test message"})
-	if err == nil {
-		t.Error("Execute() expected error when not in tmux, got nil")
 	}
+	return result, nil
 }
 
-func TestCLI_Context_JSON(t *testing.T) {
-	store := newMockStore()
-	contextStore := newMockContextStore()
-	contextStore.contexts["test123"] = &context.TmuxContext{
-		SessionName: "main",
-		WindowIndex: 0,
-		PaneIndex:   1,
-		PaneID:      "%2",
-		PaneTitle:   "Running tests",
+type mockTmuxExecutor struct {
+	outputs map[string][]byte
+}
+
+func (m *mockTmuxExecutor) Execute(name string, args ...string) ([]byte, error) {
+	key := name
+	for _, arg := range args {
+		key += " " + arg
 	}
+	if output, ok := m.outputs[key]; ok {
+		return output, nil
+	}
+	return []byte{}, nil
+}
+
+func TestCLI_Emit_SessionStart(t *testing.T) {
+	store := newMockSignalStore()
 	var buf bytes.Buffer
 	cli := NewCLI()
-	cli.store = store
-	cli.contextStore = contextStore
+	cli.signalStore = store
 	cli.out = &buf
+	cli.in = strings.NewReader(`{"session_id":"test123","hook_event_name":"SessionStart","source":"cli"}`)
 
-	err := cli.Execute([]string{"context", "test123"})
+	// Emit without tmux context (Env="")
+	err := cli.Execute([]string{"emit", "--env", ""})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
-	expected := `{"session_name":"main","window_index":0,"pane_index":1,"pane_id":"%2","pane_title":"Running tests"}` + "\n"
-	if buf.String() != expected {
-		t.Errorf("Context output = %q, want %q", buf.String(), expected)
+	sig := store.signals["claude_test123"]
+	if sig == nil {
+		t.Fatal("Signal not stored")
+	}
+	if sig.State != signal.StateStarted {
+		t.Errorf("State = %q, want %q", sig.State, signal.StateStarted)
+	}
+	if sig.Message != "claude:started:cli" {
+		t.Errorf("Message = %q, want %q", sig.Message, "claude:started:cli")
 	}
 }
 
-func TestCLI_Context_Template(t *testing.T) {
-	store := newMockStore()
-	contextStore := newMockContextStore()
-	contextStore.contexts["test123"] = &context.TmuxContext{
-		SessionName: "main",
-		WindowIndex: 0,
-		PaneIndex:   1,
-		PaneID:      "%2",
-		PaneTitle:   "Running tests",
-	}
+func TestCLI_Emit_UserPromptSubmit(t *testing.T) {
+	store := newMockSignalStore()
 	var buf bytes.Buffer
 	cli := NewCLI()
-	cli.store = store
-	cli.contextStore = contextStore
+	cli.signalStore = store
 	cli.out = &buf
+	cli.in = strings.NewReader(`{"session_id":"test123","hook_event_name":"UserPromptSubmit"}`)
 
-	err := cli.Execute([]string{"context", "--template", "{{.session_name}}:{{.pane_id}}", "test123"})
+	err := cli.Execute([]string{"emit", "--env", ""})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
-	expected := "main:%2\n"
-	if buf.String() != expected {
-		t.Errorf("Context output = %q, want %q", buf.String(), expected)
+	sig := store.signals["claude_test123"]
+	if sig == nil {
+		t.Fatal("Signal not stored")
+	}
+	if sig.State != signal.StateRunning {
+		t.Errorf("State = %q, want %q", sig.State, signal.StateRunning)
 	}
 }
 
-func TestCLI_Context_NotFound(t *testing.T) {
-	store := newMockStore()
-	contextStore := newMockContextStore()
+func TestCLI_Emit_Stop(t *testing.T) {
+	store := newMockSignalStore()
 	var buf bytes.Buffer
 	cli := NewCLI()
-	cli.store = store
-	cli.contextStore = contextStore
+	cli.signalStore = store
 	cli.out = &buf
+	cli.in = strings.NewReader(`{"session_id":"test123","hook_event_name":"Stop"}`)
 
-	err := cli.Execute([]string{"context", "nonexistent"})
-	if err == nil {
-		t.Error("Execute() expected error for non-existent context, got nil")
+	err := cli.Execute([]string{"emit", "--env", ""})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	sig := store.signals["claude_test123"]
+	if sig == nil {
+		t.Fatal("Signal not stored")
+	}
+	if sig.State != signal.StateIdle {
+		t.Errorf("State = %q, want %q", sig.State, signal.StateIdle)
 	}
 }
 
-func TestCLI_Context_InvalidTemplate(t *testing.T) {
-	store := newMockStore()
-	contextStore := newMockContextStore()
-	contextStore.contexts["test123"] = &context.TmuxContext{
-		SessionName: "main",
-		WindowIndex: 0,
-		PaneIndex:   1,
-		PaneID:      "%2",
-		PaneTitle:   "Running tests",
+func TestCLI_Emit_SessionEnd(t *testing.T) {
+	store := newMockSignalStore()
+	// Pre-populate with existing signal
+	store.signals["claude_test123"] = &signal.Signal{
+		SessionID:  "test123",
+		SignalType: "claude",
+		State:      signal.StateRunning,
 	}
+
 	var buf bytes.Buffer
 	cli := NewCLI()
-	cli.store = store
-	cli.contextStore = contextStore
+	cli.signalStore = store
 	cli.out = &buf
+	cli.in = strings.NewReader(`{"session_id":"test123","hook_event_name":"SessionEnd"}`)
 
-	err := cli.Execute([]string{"context", "--template", "{{.invalid", "test123"})
+	err := cli.Execute([]string{"emit", "--env", ""})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	// Signal should be deleted
+	if _, exists := store.signals["claude_test123"]; exists {
+		t.Error("Signal should have been deleted")
+	}
+}
+
+func TestCLI_Emit_WithCustomMessage(t *testing.T) {
+	store := newMockSignalStore()
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.out = &buf
+	cli.in = strings.NewReader(`{"session_id":"test123","hook_event_name":"UserPromptSubmit"}`)
+
+	err := cli.Execute([]string{"emit", "--env", "", "custom message"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	sig := store.signals["claude_test123"]
+	if sig == nil {
+		t.Fatal("Signal not stored")
+	}
+	if sig.CustomMessage != "custom message" {
+		t.Errorf("CustomMessage = %q, want %q", sig.CustomMessage, "custom message")
+	}
+}
+
+func TestCLI_Emit_Notification_PermissionPrompt(t *testing.T) {
+	store := newMockSignalStore()
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.out = &buf
+	cli.in = strings.NewReader(`{"session_id":"test123","hook_event_name":"Notification","notification_type":"permission_prompt"}`)
+
+	err := cli.Execute([]string{"emit", "--env", ""})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	sig := store.signals["claude_test123"]
+	if sig == nil {
+		t.Fatal("Signal not stored")
+	}
+	if sig.State != signal.StateWaiting {
+		t.Errorf("State = %q, want %q", sig.State, signal.StateWaiting)
+	}
+}
+
+func TestCLI_Scan_Default(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test1"] = &signal.Signal{
+		SessionID:  "test1",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Message:    "claude:running",
+		UpdatedAt:  time.Now(),
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+		},
+	}
+
+	executor := &mockTmuxExecutor{
+		outputs: map[string][]byte{
+			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}": []byte("0\tbash\t@0\n1\tvim\t@1\n"),
+			"tmux display-message -p #{session_name}":                            []byte("main\n"),
+		},
+	}
+	scanner := tmux.NewScannerWithExecutor(executor)
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.tmuxScanner = scanner
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	err := cli.Execute([]string{"scan"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "0:bash:running") {
+		t.Errorf("Output = %q, want to contain %q", output, "0:bash:running")
+	}
+	if !strings.Contains(output, "1:vim:") {
+		t.Errorf("Output = %q, want to contain %q", output, "1:vim:")
+	}
+}
+
+func TestCLI_Scan_WithTemplate(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test1"] = &signal.Signal{
+		SessionID:  "test1",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Message:    "claude:running",
+		UpdatedAt:  time.Now(),
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+		},
+	}
+
+	executor := &mockTmuxExecutor{
+		outputs: map[string][]byte{
+			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}": []byte("0\tbash\t@0\n"),
+			"tmux display-message -p #{session_name}":                            []byte("main\n"),
+		},
+	}
+	scanner := tmux.NewScannerWithExecutor(executor)
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.tmuxScanner = scanner
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	err := cli.Execute([]string{"scan", "--template", "{{.WindowName}}:{{range .Signals}}{{.State}}{{end}}"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "bash:running") {
+		t.Errorf("Output = %q, want to contain %q", output, "bash:running")
+	}
+}
+
+func TestCLI_Scan_SessionScope(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test1"] = &signal.Signal{
+		SessionID:  "test1",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Message:    "claude:running",
+		UpdatedAt:  time.Now(),
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "work",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+		},
+	}
+
+	executor := &mockTmuxExecutor{
+		outputs: map[string][]byte{
+			"tmux list-sessions -F #{session_name}":                                      []byte("main\nwork\n"),
+			"tmux list-windows -t main -F #{window_index}\t#{window_name}\t#{window_id}": []byte("0\tbash\t@0\n"),
+			"tmux list-windows -t work -F #{window_index}\t#{window_name}\t#{window_id}": []byte("0\tcode\t@1\n"),
+		},
+	}
+	scanner := tmux.NewScannerWithExecutor(executor)
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.tmuxScanner = scanner
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	err := cli.Execute([]string{"scan", "--scope", "session"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	// work session should have signal
+	if !strings.Contains(output, "0:code:running") {
+		t.Errorf("Output = %q, want to contain %q", output, "0:code:running")
+	}
+}
+
+func TestCLI_Emit_InvalidJSON(t *testing.T) {
+	store := newMockSignalStore()
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.out = &buf
+	cli.in = strings.NewReader(`{invalid}`)
+
+	err := cli.Execute([]string{"emit", "--env", ""})
 	if err == nil {
-		t.Error("Execute() expected error for invalid template, got nil")
+		t.Error("Execute() expected error for invalid JSON, got nil")
 	}
 }
