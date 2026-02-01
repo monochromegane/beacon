@@ -153,6 +153,7 @@ func TestCLI_Context_JSON(t *testing.T) {
 		WindowIndex: 0,
 		PaneIndex:   1,
 		PaneID:      "%2",
+		PaneTitle:   "Running tests",
 	}
 	var buf bytes.Buffer
 	cli := NewCLI()
@@ -165,7 +166,7 @@ func TestCLI_Context_JSON(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
-	expected := `{"session_name":"main","window_index":0,"pane_index":1,"pane_id":"%2"}` + "\n"
+	expected := `{"session_name":"main","window_index":0,"pane_index":1,"pane_id":"%2","pane_title":"Running tests"}` + "\n"
 	if buf.String() != expected {
 		t.Errorf("Context output = %q, want %q", buf.String(), expected)
 	}
@@ -179,6 +180,7 @@ func TestCLI_Context_Template(t *testing.T) {
 		WindowIndex: 0,
 		PaneIndex:   1,
 		PaneID:      "%2",
+		PaneTitle:   "Running tests",
 	}
 	var buf bytes.Buffer
 	cli := NewCLI()
@@ -220,6 +222,7 @@ func TestCLI_Context_InvalidTemplate(t *testing.T) {
 		WindowIndex: 0,
 		PaneIndex:   1,
 		PaneID:      "%2",
+		PaneTitle:   "Running tests",
 	}
 	var buf bytes.Buffer
 	cli := NewCLI()

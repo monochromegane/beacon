@@ -15,6 +15,7 @@ func TestFileContextStore_Write(t *testing.T) {
 		WindowIndex: 0,
 		PaneIndex:   1,
 		PaneID:      "%2",
+		PaneTitle:   "Running tests",
 	}
 
 	err := store.Write("test123", ctx)
@@ -27,7 +28,7 @@ func TestFileContextStore_Write(t *testing.T) {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
 
-	expected := `{"session_name":"main","window_index":0,"pane_index":1,"pane_id":"%2"}`
+	expected := `{"session_name":"main","window_index":0,"pane_index":1,"pane_id":"%2","pane_title":"Running tests"}`
 	if string(content) != expected {
 		t.Errorf("Write() content = %q, want %q", string(content), expected)
 	}
@@ -37,8 +38,8 @@ func TestFileContextStore_Write_Overwrite(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewFileContextStoreWithDir(tmpDir)
 
-	ctx1 := &TmuxContext{SessionName: "first", WindowIndex: 0, PaneIndex: 0, PaneID: "%0"}
-	ctx2 := &TmuxContext{SessionName: "second", WindowIndex: 1, PaneIndex: 2, PaneID: "%3"}
+	ctx1 := &TmuxContext{SessionName: "first", WindowIndex: 0, PaneIndex: 0, PaneID: "%0", PaneTitle: "First task"}
+	ctx2 := &TmuxContext{SessionName: "second", WindowIndex: 1, PaneIndex: 2, PaneID: "%3", PaneTitle: "Second task"}
 
 	store.Write("test123", ctx1)
 	err := store.Write("test123", ctx2)
@@ -51,7 +52,7 @@ func TestFileContextStore_Write_Overwrite(t *testing.T) {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
 
-	expected := `{"session_name":"second","window_index":1,"pane_index":2,"pane_id":"%3"}`
+	expected := `{"session_name":"second","window_index":1,"pane_index":2,"pane_id":"%3","pane_title":"Second task"}`
 	if string(content) != expected {
 		t.Errorf("Write() content = %q, want %q", string(content), expected)
 	}
@@ -61,7 +62,7 @@ func TestFileContextStore_Delete(t *testing.T) {
 	tmpDir := t.TempDir()
 	store := NewFileContextStoreWithDir(tmpDir)
 
-	ctx := &TmuxContext{SessionName: "main", WindowIndex: 0, PaneIndex: 0, PaneID: "%0"}
+	ctx := &TmuxContext{SessionName: "main", WindowIndex: 0, PaneIndex: 0, PaneID: "%0", PaneTitle: ""}
 	store.Write("test123", ctx)
 
 	err := store.Delete("test123")
@@ -94,6 +95,7 @@ func TestFileContextStore_Read(t *testing.T) {
 		WindowIndex: 0,
 		PaneIndex:   1,
 		PaneID:      "%2",
+		PaneTitle:   "Running tests",
 	}
 	store.Write("test123", ctx)
 
@@ -102,7 +104,7 @@ func TestFileContextStore_Read(t *testing.T) {
 		t.Fatalf("Read() error = %v", err)
 	}
 
-	expected := `{"session_name":"main","window_index":0,"pane_index":1,"pane_id":"%2"}`
+	expected := `{"session_name":"main","window_index":0,"pane_index":1,"pane_id":"%2","pane_title":"Running tests"}`
 	if string(data) != expected {
 		t.Errorf("Read() = %q, want %q", string(data), expected)
 	}

@@ -28,6 +28,7 @@ func TestTmuxContext_ToJSON(t *testing.T) {
 		WindowIndex: 0,
 		PaneIndex:   1,
 		PaneID:      "%2",
+		PaneTitle:   "Running tests",
 	}
 
 	data, err := ctx.ToJSON()
@@ -35,7 +36,7 @@ func TestTmuxContext_ToJSON(t *testing.T) {
 		t.Fatalf("ToJSON() error = %v", err)
 	}
 
-	expected := `{"session_name":"main","window_index":0,"pane_index":1,"pane_id":"%2"}`
+	expected := `{"session_name":"main","window_index":0,"pane_index":1,"pane_id":"%2","pane_title":"Running tests"}`
 	if string(data) != expected {
 		t.Errorf("ToJSON() = %q, want %q", string(data), expected)
 	}
@@ -69,7 +70,7 @@ func TestTmuxProvider_GetContext_Success(t *testing.T) {
 	}()
 
 	executor := &mockExecutor{
-		output: []byte("main\t0\t1\t%2\n"),
+		output: []byte("main\t0\t1\t%2\t⠋ Running tests\n"),
 	}
 	provider := NewTmuxProviderWithExecutor(executor)
 
@@ -95,6 +96,9 @@ func TestTmuxProvider_GetContext_Success(t *testing.T) {
 	if tmuxCtx.PaneID != "%2" {
 		t.Errorf("PaneID = %q, want %q", tmuxCtx.PaneID, "%2")
 	}
+	if tmuxCtx.PaneTitle != "Running tests" {
+		t.Errorf("PaneTitle = %q, want %q", tmuxCtx.PaneTitle, "Running tests")
+	}
 }
 
 func TestTmuxProvider_GetContext_CommandError(t *testing.T) {
@@ -119,6 +123,63 @@ func TestTmuxProvider_GetContext_CommandError(t *testing.T) {
 	}
 }
 
+func TestExtractPaneTitleSummary(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"empty string", "", ""},
+		{"spinner with text", "⠋ Running tests", "Running tests"},
+		{"spinner with multi-word text", "⠙ Exploring codebase structure", "Exploring codebase structure"},
+		{"no space separator", "NoSpace", "NoSpace"},
+		{"only spinner", "⠋", "⠋"},
+		{"multiple spaces", "⠋ Multiple   spaces  here", "Multiple   spaces  here"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractPaneTitleSummary(tt.input)
+			if result != tt.expected {
+				t.Errorf("extractPaneTitleSummary(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestTmuxProvider_GetContext_EmptyPaneTitle(t *testing.T) {
+	originalTmux := os.Getenv("TMUX")
+	os.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
+	defer func() {
+		if originalTmux != "" {
+			os.Setenv("TMUX", originalTmux)
+		} else {
+			os.Unsetenv("TMUX")
+		}
+	}()
+
+	// When pane_title is empty, tmux outputs an empty string for that field.
+	// The output is "main\t0\t1\t%2\t\n" (with trailing tab and newline but empty title).
+	executor := &mockExecutor{
+		output: []byte("main\t0\t1\t%2\t\n"),
+	}
+	provider := NewTmuxProviderWithExecutor(executor)
+
+	ctx, err := provider.GetContext()
+	if err != nil {
+		t.Fatalf("GetContext() error = %v", err)
+	}
+
+	tmuxCtx, ok := ctx.(*TmuxContext)
+	if !ok {
+		t.Fatalf("GetContext() returned wrong type")
+	}
+
+	if tmuxCtx.PaneTitle != "" {
+		t.Errorf("PaneTitle = %q, want empty string", tmuxCtx.PaneTitle)
+	}
+}
+
 func TestTmuxProvider_GetContext_InvalidOutput(t *testing.T) {
 	originalTmux := os.Getenv("TMUX")
 	os.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
@@ -134,9 +195,9 @@ func TestTmuxProvider_GetContext_InvalidOutput(t *testing.T) {
 		name   string
 		output string
 	}{
-		{"too few parts", "main\t0\t1"},
-		{"invalid window index", "main\tabc\t1\t%2"},
-		{"invalid pane index", "main\t0\tabc\t%2"},
+		{"too few parts", "main\t0\t1\t%2"},
+		{"invalid window index", "main\tabc\t1\t%2\t\n"},
+		{"invalid pane index", "main\t0\tabc\t%2\t\n"},
 	}
 
 	for _, tt := range tests {

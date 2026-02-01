@@ -18,6 +18,21 @@ type TmuxContext struct {
 	WindowIndex int    `json:"window_index"`
 	PaneIndex   int    `json:"pane_index"`
 	PaneID      string `json:"pane_id"`
+	PaneTitle   string `json:"pane_title"`
+}
+
+// extractPaneTitleSummary removes the spinner prefix from pane title.
+// Claude Code sets pane titles like "⠋ Running tests" where the first character is a spinner.
+// This function extracts just the summary part after the spinner.
+func extractPaneTitleSummary(paneTitle string) string {
+	if paneTitle == "" {
+		return ""
+	}
+	parts := strings.SplitN(paneTitle, " ", 2)
+	if len(parts) < 2 {
+		return paneTitle
+	}
+	return parts[1]
 }
 
 // Type returns the context type identifier.
@@ -64,13 +79,14 @@ func (p *TmuxProvider) GetContext() (Context, error) {
 		return nil, ErrNotInTmux
 	}
 
-	output, err := p.executor.Execute("tmux", "display-message", "-p", "#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_id}")
+	output, err := p.executor.Execute("tmux", "display-message", "-p", "#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_id}\t#{pane_title}")
 	if err != nil {
 		return nil, err
 	}
 
-	parts := strings.Split(strings.TrimSpace(string(output)), "\t")
-	if len(parts) != 4 {
+	// Use TrimSuffix instead of TrimSpace to preserve trailing tab when pane_title is empty
+	parts := strings.Split(strings.TrimSuffix(string(output), "\n"), "\t")
+	if len(parts) < 5 {
 		return nil, errors.New("unexpected tmux output format")
 	}
 
@@ -89,5 +105,6 @@ func (p *TmuxProvider) GetContext() (Context, error) {
 		WindowIndex: windowIndex,
 		PaneIndex:   paneIndex,
 		PaneID:      parts[3],
+		PaneTitle:   extractPaneTitleSummary(parts[4]),
 	}, nil
 }
