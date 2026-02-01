@@ -22,6 +22,7 @@ const cmdName = "beacon"
 // EnvironmentProvider is an interface for obtaining environment information.
 type EnvironmentProvider interface {
 	GetEnvironment() (*signal.Environment, error)
+	GetPaneTitle(paneID string) (string, error)
 }
 
 // EmitCmd emits a beacon signal based on hook events from stdin.
@@ -88,10 +89,10 @@ func (c *EmitCmd) getPreservedEnvironment(cli *CLI, store signal.Store, sessionI
 		// Copy and reuse existing Environment
 		env := *existingSignal.Environment
 
-		// Update only PaneTitle with current value
-		currentEnv, err := provider.GetEnvironment()
+		// Update only PaneTitle with current value from the correct pane
+		paneTitle, err := provider.GetPaneTitle(existingSignal.Environment.PaneID)
 		if err == nil {
-			env.PaneTitle = currentEnv.PaneTitle
+			env.PaneTitle = paneTitle
 		}
 
 		return &env, nil

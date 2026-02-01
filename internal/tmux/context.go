@@ -91,3 +91,12 @@ func (p *ContextProvider) GetEnvironment() (*signal.Environment, error) {
 		PaneTitle:   extractPaneTitleSummary(parts[4]),
 	}, nil
 }
+
+// GetPaneTitle retrieves the pane title for a specific pane ID.
+func (p *ContextProvider) GetPaneTitle(paneID string) (string, error) {
+	output, err := p.executor.Execute("tmux", "display-message", "-t", paneID, "-p", "#{pane_title}")
+	if err != nil {
+		return "", err
+	}
+	return extractPaneTitleSummary(strings.TrimSuffix(string(output), "\n")), nil
+}

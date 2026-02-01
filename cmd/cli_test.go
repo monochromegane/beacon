@@ -378,11 +378,22 @@ func TestCLI_Emit_InvalidJSON(t *testing.T) {
 }
 
 type mockContextProvider struct {
-	env *signal.Environment
+	env       *signal.Environment
+	paneTitle string // for GetPaneTitle
 }
 
 func (m *mockContextProvider) GetEnvironment() (*signal.Environment, error) {
 	return m.env, nil
+}
+
+func (m *mockContextProvider) GetPaneTitle(paneID string) (string, error) {
+	if m.paneTitle != "" {
+		return m.paneTitle, nil
+	}
+	if m.env != nil {
+		return m.env.PaneTitle, nil
+	}
+	return "", nil
 }
 
 func newTestCLIWithTmux(store *mockSignalStore, input string, provider *mockContextProvider) (*CLI, *bytes.Buffer) {
@@ -413,6 +424,7 @@ func TestCLI_Emit_PreservesEnvironment_OnStop(t *testing.T) {
 	}
 
 	// Mock provider returns window 1 (simulating user moved to different window)
+	// GetEnvironment would return this (wrong window), but GetPaneTitle uses paneTitle field
 	provider := &mockContextProvider{
 		env: &signal.Environment{
 			Type:        "tmux",
@@ -420,8 +432,9 @@ func TestCLI_Emit_PreservesEnvironment_OnStop(t *testing.T) {
 			WindowIndex: 1, // Different window!
 			PaneIndex:   0,
 			PaneID:      "%1",
-			PaneTitle:   "CurrentTitle",
+			PaneTitle:   "WrongPaneTitle", // This should NOT be used
 		},
+		paneTitle: "OriginalPaneTitle", // This should be used (from GetPaneTitle with correct pane ID)
 	}
 
 	cli, _ := newTestCLIWithTmux(store, `{"session_id":"test123","hook_event_name":"Stop"}`, provider)
@@ -445,9 +458,9 @@ func TestCLI_Emit_PreservesEnvironment_OnStop(t *testing.T) {
 	if sig.Environment.WindowIndex != 0 {
 		t.Errorf("WindowIndex = %d, want %d (should be preserved)", sig.Environment.WindowIndex, 0)
 	}
-	// PaneTitle should be updated to current value
-	if sig.Environment.PaneTitle != "CurrentTitle" {
-		t.Errorf("PaneTitle = %q, want %q (should be updated)", sig.Environment.PaneTitle, "CurrentTitle")
+	// PaneTitle should be updated from the correct pane (via GetPaneTitle), not from GetEnvironment
+	if sig.Environment.PaneTitle != "OriginalPaneTitle" {
+		t.Errorf("PaneTitle = %q, want %q (should be from original pane)", sig.Environment.PaneTitle, "OriginalPaneTitle")
 	}
 }
 
