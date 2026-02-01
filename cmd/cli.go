@@ -19,6 +19,11 @@ import (
 
 const cmdName = "beacon"
 
+// EnvironmentProvider is an interface for obtaining environment information.
+type EnvironmentProvider interface {
+	GetEnvironment() (*signal.Environment, error)
+}
+
 // EmitCmd emits a beacon signal based on hook events from stdin.
 type EmitCmd struct {
 	Signal  string `name:"signal" short:"S" help:"Signal type" default:"claude" enum:"claude"`
@@ -36,21 +41,22 @@ func (c *EmitCmd) Run(cli *CLI) error {
 	// Map event to state
 	result := signal.MapEventToState(event)
 
+	// Get store early (used for both delete and environment preservation)
+	store, err := cli.getSignalStore()
+	if err != nil {
+		return err
+	}
+
 	// If SessionEnd, delete signal and exit
 	if result.ShouldDelete {
-		store, err := cli.getSignalStore()
-		if err != nil {
-			return err
-		}
 		return store.Delete(c.Signal, event.SessionID)
 	}
 
-	// Get environment if specified
+	// Get environment if specified (preserving existing window/pane info)
 	var env *signal.Environment
 	if c.Env == "tmux" {
-		provider := cli.getTmuxContextProvider()
-		env, err = provider.GetEnvironment()
-		if err != nil && !errors.Is(err, tmux.ErrNotInTmux) {
+		env, err = c.getPreservedEnvironment(cli, store, event.SessionID)
+		if err != nil {
 			return err
 		}
 	}
@@ -68,11 +74,35 @@ func (c *EmitCmd) Run(cli *CLI) error {
 	}
 
 	// Save signal
-	store, err := cli.getSignalStore()
-	if err != nil {
-		return err
-	}
 	return store.Write(sig)
+}
+
+// getPreservedEnvironment returns an Environment that preserves existing window/pane info.
+// If an existing signal exists, it reuses the Environment (only updating PaneTitle).
+// If no existing signal exists, it fetches fresh environment from tmux.
+func (c *EmitCmd) getPreservedEnvironment(cli *CLI, store signal.Store, sessionID string) (*signal.Environment, error) {
+	provider := cli.getTmuxContextProvider()
+
+	existingSignal, err := store.Read(c.Signal, sessionID)
+	if err == nil && existingSignal != nil && existingSignal.Environment != nil {
+		// Copy and reuse existing Environment
+		env := *existingSignal.Environment
+
+		// Update only PaneTitle with current value
+		currentEnv, err := provider.GetEnvironment()
+		if err == nil {
+			env.PaneTitle = currentEnv.PaneTitle
+		}
+
+		return &env, nil
+	}
+
+	// No existing signal, fetch fresh environment
+	env, err := provider.GetEnvironment()
+	if err != nil && !errors.Is(err, tmux.ErrNotInTmux) {
+		return nil, err
+	}
+	return env, nil
 }
 
 // ScanCmd scans tmux windows/sessions for signals.
@@ -214,7 +244,7 @@ type CLI struct {
 	Scan    ScanCmd          `cmd:"" help:"Scan for beacon signals in tmux"`
 
 	signalStore         signal.Store
-	tmuxContextProvider *tmux.ContextProvider
+	tmuxContextProvider EnvironmentProvider
 	tmuxScanner         *tmux.Scanner
 	in                  io.Reader
 	out                 io.Writer
@@ -236,7 +266,7 @@ func (c *CLI) getSignalStore() (signal.Store, error) {
 	return c.signalStore, nil
 }
 
-func (c *CLI) getTmuxContextProvider() *tmux.ContextProvider {
+func (c *CLI) getTmuxContextProvider() EnvironmentProvider {
 	if c.tmuxContextProvider == nil {
 		c.tmuxContextProvider = tmux.NewContextProvider()
 	}

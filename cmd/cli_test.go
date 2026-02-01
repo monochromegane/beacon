@@ -376,3 +376,164 @@ func TestCLI_Emit_InvalidJSON(t *testing.T) {
 		t.Error("Execute() expected error for invalid JSON, got nil")
 	}
 }
+
+type mockContextProvider struct {
+	env *signal.Environment
+}
+
+func (m *mockContextProvider) GetEnvironment() (*signal.Environment, error) {
+	return m.env, nil
+}
+
+func newTestCLIWithTmux(store *mockSignalStore, input string, provider *mockContextProvider) (*CLI, *bytes.Buffer) {
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.tmuxContextProvider = provider
+	cli.out = &buf
+	cli.in = strings.NewReader(input)
+	return cli, &buf
+}
+
+func TestCLI_Emit_PreservesEnvironment_OnStop(t *testing.T) {
+	store := newMockSignalStore()
+	// Simulate existing signal from SessionStart (window 0)
+	store.signals["claude_test123"] = &signal.Signal{
+		SessionID:  "test123",
+		SignalType: "claude",
+		State:      signal.StateStarted,
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+			PaneTitle:   "Initial",
+		},
+	}
+
+	// Mock provider returns window 1 (simulating user moved to different window)
+	provider := &mockContextProvider{
+		env: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 1, // Different window!
+			PaneIndex:   0,
+			PaneID:      "%1",
+			PaneTitle:   "CurrentTitle",
+		},
+	}
+
+	cli, _ := newTestCLIWithTmux(store, `{"session_id":"test123","hook_event_name":"Stop"}`, provider)
+
+	err := cli.Execute([]string{"emit"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	sig := store.signals["claude_test123"]
+	if sig == nil {
+		t.Fatal("Signal not stored")
+	}
+	if sig.State != signal.StateIdle {
+		t.Errorf("State = %q, want %q", sig.State, signal.StateIdle)
+	}
+	if sig.Environment == nil {
+		t.Fatal("Environment is nil")
+	}
+	// Window index should be preserved from original signal (0), not current (1)
+	if sig.Environment.WindowIndex != 0 {
+		t.Errorf("WindowIndex = %d, want %d (should be preserved)", sig.Environment.WindowIndex, 0)
+	}
+	// PaneTitle should be updated to current value
+	if sig.Environment.PaneTitle != "CurrentTitle" {
+		t.Errorf("PaneTitle = %q, want %q (should be updated)", sig.Environment.PaneTitle, "CurrentTitle")
+	}
+}
+
+func TestCLI_Emit_UpdatesPaneTitle_OnStop(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test123"] = &signal.Signal{
+		SessionID:  "test123",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+			PaneTitle:   "OldTitle",
+		},
+	}
+
+	provider := &mockContextProvider{
+		env: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+			PaneTitle:   "NewTitle",
+		},
+	}
+
+	cli, _ := newTestCLIWithTmux(store, `{"session_id":"test123","hook_event_name":"Stop"}`, provider)
+
+	err := cli.Execute([]string{"emit"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	sig := store.signals["claude_test123"]
+	if sig == nil {
+		t.Fatal("Signal not stored")
+	}
+	if sig.Environment.PaneTitle != "NewTitle" {
+		t.Errorf("PaneTitle = %q, want %q", sig.Environment.PaneTitle, "NewTitle")
+	}
+}
+
+func TestCLI_Emit_FreshEnvironment_OnSessionStart(t *testing.T) {
+	store := newMockSignalStore()
+	// No existing signal
+
+	provider := &mockContextProvider{
+		env: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 2,
+			PaneIndex:   1,
+			PaneID:      "%5",
+			PaneTitle:   "Fresh",
+		},
+	}
+
+	cli, _ := newTestCLIWithTmux(store, `{"session_id":"test123","hook_event_name":"SessionStart","source":"cli"}`, provider)
+
+	err := cli.Execute([]string{"emit"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	sig := store.signals["claude_test123"]
+	if sig == nil {
+		t.Fatal("Signal not stored")
+	}
+	if sig.Environment == nil {
+		t.Fatal("Environment is nil")
+	}
+	// Should use fresh environment values
+	if sig.Environment.WindowIndex != 2 {
+		t.Errorf("WindowIndex = %d, want %d", sig.Environment.WindowIndex, 2)
+	}
+	if sig.Environment.PaneIndex != 1 {
+		t.Errorf("PaneIndex = %d, want %d", sig.Environment.PaneIndex, 1)
+	}
+	if sig.Environment.PaneID != "%5" {
+		t.Errorf("PaneID = %q, want %q", sig.Environment.PaneID, "%5")
+	}
+	if sig.Environment.PaneTitle != "Fresh" {
+		t.Errorf("PaneTitle = %q, want %q", sig.Environment.PaneTitle, "Fresh")
+	}
+}
