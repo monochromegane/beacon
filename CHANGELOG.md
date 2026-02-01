@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.1.0](https://github.com/monochromegane/beacon/compare/v0.0.3...v0.1.0) - 2026-02-01
+- Change cli if by @monochromegane in https://github.com/monochromegane/beacon/pull/9
+- Change default output. by @monochromegane in https://github.com/monochromegane/beacon/pull/11
+- Improve scan output format by @monochromegane in https://github.com/monochromegane/beacon/pull/12
+
 ## [v0.0.3](https://github.com/monochromegane/beacon/compare/v0.0.2...v0.0.3) - 2026-02-01
 - Add pane_title field to capture Claude Code activity status by @monochromegane in https://github.com/monochromegane/beacon/pull/7
 
