@@ -94,39 +94,66 @@ func (c *ScanCmd) Run(cli *CLI) error {
 	}
 
 	scanner := cli.getTmuxScanner()
-	var windows []tmux.WindowInfo
 
 	switch c.Scope {
 	case "window":
-		windows, err = scanner.ScanWindows(signals)
+		windows, err := scanner.ScanWindows(signals)
+		if err != nil {
+			return err
+		}
+		if c.Template != "" {
+			return c.outputWindowsWithTemplate(cli.out, windows)
+		}
+		return c.outputWindowsDefault(cli.out, windows)
 	case "session":
-		windows, err = scanner.ScanSessions(signals)
+		sessions, err := scanner.ScanSessionsAggregated(signals)
+		if err != nil {
+			return err
+		}
+		if c.Template != "" {
+			return c.outputSessionsWithTemplate(cli.out, sessions)
+		}
+		return c.outputSessionsDefault(cli.out, sessions)
 	}
-	if err != nil {
-		return err
-	}
-
-	// Output
-	if c.Template != "" {
-		return c.outputWithTemplate(cli.out, windows)
-	}
-	return c.outputDefault(cli.out, windows)
+	return nil
 }
 
-// outputDefault outputs in default format: {window_index}:{window_name}:{comma_separated_states}
-func (c *ScanCmd) outputDefault(out io.Writer, windows []tmux.WindowInfo) error {
+// outputWindowsDefault outputs windows in default format: {window_index}: {window_name} ({pane_count} panes) {states}
+func (c *ScanCmd) outputWindowsDefault(out io.Writer, windows []tmux.WindowInfo) error {
 	for _, w := range windows {
 		states := make([]string, len(w.Signals))
 		for i, s := range w.Signals {
 			states[i] = s.State
 		}
-		fmt.Fprintf(out, "%d: %s:%s\n", w.WindowIndex, w.WindowName, strings.Join(states, ","))
+		statesStr := strings.Join(states, ", ")
+		if statesStr != "" {
+			fmt.Fprintf(out, "%d: %s (%d panes) %s\n", w.WindowIndex, w.WindowName, w.PaneCount, statesStr)
+		} else {
+			fmt.Fprintf(out, "%d: %s (%d panes)\n", w.WindowIndex, w.WindowName, w.PaneCount)
+		}
 	}
 	return nil
 }
 
-// outputWithTemplate outputs using a Go template.
-func (c *ScanCmd) outputWithTemplate(out io.Writer, windows []tmux.WindowInfo) error {
+// outputSessionsDefault outputs sessions in default format: {session_name}: {window_count} windows {states}
+func (c *ScanCmd) outputSessionsDefault(out io.Writer, sessions []tmux.SessionInfo) error {
+	for _, s := range sessions {
+		states := make([]string, len(s.Signals))
+		for i, sig := range s.Signals {
+			states[i] = sig.State
+		}
+		statesStr := strings.Join(states, ", ")
+		if statesStr != "" {
+			fmt.Fprintf(out, "%s: %d windows %s\n", s.SessionName, s.WindowCount, statesStr)
+		} else {
+			fmt.Fprintf(out, "%s: %d windows\n", s.SessionName, s.WindowCount)
+		}
+	}
+	return nil
+}
+
+// outputWindowsWithTemplate outputs windows using a Go template.
+func (c *ScanCmd) outputWindowsWithTemplate(out io.Writer, windows []tmux.WindowInfo) error {
 	tmpl, err := template.New("scan").Parse(c.Template)
 	if err != nil {
 		return err
@@ -139,10 +166,41 @@ func (c *ScanCmd) outputWithTemplate(out io.Writer, windows []tmux.WindowInfo) e
 			"WindowIndex": w.WindowIndex,
 			"WindowName":  w.WindowName,
 			"WindowID":    w.WindowID,
+			"PaneCount":   w.PaneCount,
 			"Signals":     w.Signals,
 		}
 		// Also provide JSON of signals for advanced processing
 		signalsJSON, _ := json.Marshal(w.Signals)
+		data["SignalsJSON"] = string(signalsJSON)
+
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, data); err != nil {
+			return err
+		}
+		// Only output if template produced non-empty result
+		if result := strings.TrimSpace(buf.String()); result != "" {
+			fmt.Fprintln(out, result)
+		}
+	}
+	return nil
+}
+
+// outputSessionsWithTemplate outputs sessions using a Go template.
+func (c *ScanCmd) outputSessionsWithTemplate(out io.Writer, sessions []tmux.SessionInfo) error {
+	tmpl, err := template.New("scan").Parse(c.Template)
+	if err != nil {
+		return err
+	}
+
+	for _, s := range sessions {
+		// Convert session to map for template
+		data := map[string]any{
+			"SessionName": s.SessionName,
+			"WindowCount": s.WindowCount,
+			"Signals":     s.Signals,
+		}
+		// Also provide JSON of signals for advanced processing
+		signalsJSON, _ := json.Marshal(s.Signals)
 		data["SignalsJSON"] = string(signalsJSON)
 
 		var buf bytes.Buffer

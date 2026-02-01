@@ -205,8 +205,8 @@ func TestCLI_Scan_Default(t *testing.T) {
 
 	executor := &mockTmuxExecutor{
 		outputs: map[string][]byte{
-			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}": []byte("0\tbash\t@0\n1\tvim\t@1\n"),
-			"tmux display-message -p #{session_name}":                            []byte("main\n"),
+			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}": []byte("0\tbash\t@0\t2\n1\tvim\t@1\t1\n"),
+			"tmux display-message -p #{session_name}":                                             []byte("main\n"),
 		},
 	}
 	scanner := tmux.NewScannerWithExecutor(executor)
@@ -224,11 +224,11 @@ func TestCLI_Scan_Default(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "0: bash:running") {
-		t.Errorf("Output = %q, want to contain %q", output, "0: bash:running")
+	if !strings.Contains(output, "0: bash (2 panes) running") {
+		t.Errorf("Output = %q, want to contain %q", output, "0: bash (2 panes) running")
 	}
-	if !strings.Contains(output, "1: vim:") {
-		t.Errorf("Output = %q, want to contain %q", output, "1: vim:")
+	if !strings.Contains(output, "1: vim (1 panes)") {
+		t.Errorf("Output = %q, want to contain %q", output, "1: vim (1 panes)")
 	}
 }
 
@@ -251,8 +251,8 @@ func TestCLI_Scan_WithTemplate(t *testing.T) {
 
 	executor := &mockTmuxExecutor{
 		outputs: map[string][]byte{
-			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}": []byte("0\tbash\t@0\n"),
-			"tmux display-message -p #{session_name}":                            []byte("main\n"),
+			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}": []byte("0\tbash\t@0\t2\n"),
+			"tmux display-message -p #{session_name}":                                             []byte("main\n"),
 		},
 	}
 	scanner := tmux.NewScannerWithExecutor(executor)
@@ -264,14 +264,14 @@ func TestCLI_Scan_WithTemplate(t *testing.T) {
 	cli.out = &buf
 	cli.in = strings.NewReader("")
 
-	err := cli.Execute([]string{"scan", "--template", "{{.WindowName}}:{{range .Signals}}{{.State}}{{end}}"})
+	err := cli.Execute([]string{"scan", "--template", "{{.WindowName}} ({{.PaneCount}} panes):{{range .Signals}}{{.State}}{{end}}"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "bash:running") {
-		t.Errorf("Output = %q, want to contain %q", output, "bash:running")
+	if !strings.Contains(output, "bash (2 panes):running") {
+		t.Errorf("Output = %q, want to contain %q", output, "bash (2 panes):running")
 	}
 }
 
@@ -294,9 +294,7 @@ func TestCLI_Scan_SessionScope(t *testing.T) {
 
 	executor := &mockTmuxExecutor{
 		outputs: map[string][]byte{
-			"tmux list-sessions -F #{session_name}":                                      []byte("main\nwork\n"),
-			"tmux list-windows -t main -F #{window_index}\t#{window_name}\t#{window_id}": []byte("0\tbash\t@0\n"),
-			"tmux list-windows -t work -F #{window_index}\t#{window_name}\t#{window_id}": []byte("0\tcode\t@1\n"),
+			"tmux list-sessions -F #{session_name}\t#{session_windows}": []byte("main\t1\nwork\t2\n"),
 		},
 	}
 	scanner := tmux.NewScannerWithExecutor(executor)
@@ -315,8 +313,54 @@ func TestCLI_Scan_SessionScope(t *testing.T) {
 
 	output := buf.String()
 	// work session should have signal
-	if !strings.Contains(output, "0: code:running") {
-		t.Errorf("Output = %q, want to contain %q", output, "0: code:running")
+	if !strings.Contains(output, "work: 2 windows running") {
+		t.Errorf("Output = %q, want to contain %q", output, "work: 2 windows running")
+	}
+	// main session should have no signals
+	if !strings.Contains(output, "main: 1 windows") {
+		t.Errorf("Output = %q, want to contain %q", output, "main: 1 windows")
+	}
+}
+
+func TestCLI_Scan_SessionScope_WithTemplate(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test1"] = &signal.Signal{
+		SessionID:  "test1",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Message:    "claude:running",
+		UpdatedAt:  time.Now(),
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "work",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+		},
+	}
+
+	executor := &mockTmuxExecutor{
+		outputs: map[string][]byte{
+			"tmux list-sessions -F #{session_name}\t#{session_windows}": []byte("work\t3\n"),
+		},
+	}
+	scanner := tmux.NewScannerWithExecutor(executor)
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.tmuxScanner = scanner
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	err := cli.Execute([]string{"scan", "--scope", "session", "--template", "{{.SessionName}}: {{.WindowCount}} windows"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "work: 3 windows") {
+		t.Errorf("Output = %q, want to contain %q", output, "work: 3 windows")
 	}
 }
 
