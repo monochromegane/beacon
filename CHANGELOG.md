@@ -1,5 +1,8 @@
 # Changelog
 
+## [v0.0.3](https://github.com/monochromegane/beacon/compare/v0.0.2...v0.0.3) - 2026-02-01
+- Add pane_title field to capture Claude Code activity status by @monochromegane in https://github.com/monochromegane/beacon/pull/7
+
 ## [v0.0.2](https://github.com/monochromegane/beacon/compare/v0.0.1...v0.0.2) - 2026-01-22
 - Replace PID-based session identification with user-provided string ID by @monochromegane in https://github.com/monochromegane/beacon/pull/5
 
