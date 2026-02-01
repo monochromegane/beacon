@@ -224,11 +224,11 @@ func TestCLI_Scan_Default(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "0:bash:running") {
-		t.Errorf("Output = %q, want to contain %q", output, "0:bash:running")
+	if !strings.Contains(output, "0: bash:running") {
+		t.Errorf("Output = %q, want to contain %q", output, "0: bash:running")
 	}
-	if !strings.Contains(output, "1:vim:") {
-		t.Errorf("Output = %q, want to contain %q", output, "1:vim:")
+	if !strings.Contains(output, "1: vim:") {
+		t.Errorf("Output = %q, want to contain %q", output, "1: vim:")
 	}
 }
 
@@ -315,8 +315,8 @@ func TestCLI_Scan_SessionScope(t *testing.T) {
 
 	output := buf.String()
 	// work session should have signal
-	if !strings.Contains(output, "0:code:running") {
-		t.Errorf("Output = %q, want to contain %q", output, "0:code:running")
+	if !strings.Contains(output, "0: code:running") {
+		t.Errorf("Output = %q, want to contain %q", output, "0: code:running")
 	}
 }
 
