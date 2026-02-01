@@ -200,13 +200,14 @@ func TestCLI_Scan_Default(t *testing.T) {
 			WindowIndex: 0,
 			PaneIndex:   0,
 			PaneID:      "%0",
+			PaneTitle:   "Building",
 		},
 	}
 
 	executor := &mockTmuxExecutor{
 		outputs: map[string][]byte{
-			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}": []byte("0\tbash\t@0\n1\tvim\t@1\n"),
-			"tmux display-message -p #{session_name}":                            []byte("main\n"),
+			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}": []byte("0\tbash\t@0\t2\n1\tvim\t@1\t1\n"),
+			"tmux display-message -p #{session_name}":                                             []byte("main\n"),
 		},
 	}
 	scanner := tmux.NewScannerWithExecutor(executor)
@@ -218,17 +219,18 @@ func TestCLI_Scan_Default(t *testing.T) {
 	cli.out = &buf
 	cli.in = strings.NewReader("")
 
-	err := cli.Execute([]string{"scan"})
+	err := cli.Execute([]string{"scan", "--color=never"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "0: bash:running") {
-		t.Errorf("Output = %q, want to contain %q", output, "0: bash:running")
+	// New format: {window_index}: {window_name} ({pane_count} panes) | {state}: "{title}"
+	if !strings.Contains(output, `0: bash (2 panes) | running: "Building"`) {
+		t.Errorf("Output = %q, want to contain %q", output, `0: bash (2 panes) | running: "Building"`)
 	}
-	if !strings.Contains(output, "1: vim:") {
-		t.Errorf("Output = %q, want to contain %q", output, "1: vim:")
+	if !strings.Contains(output, "1: vim (1 panes)") {
+		t.Errorf("Output = %q, want to contain %q", output, "1: vim (1 panes)")
 	}
 }
 
@@ -251,8 +253,8 @@ func TestCLI_Scan_WithTemplate(t *testing.T) {
 
 	executor := &mockTmuxExecutor{
 		outputs: map[string][]byte{
-			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}": []byte("0\tbash\t@0\n"),
-			"tmux display-message -p #{session_name}":                            []byte("main\n"),
+			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}": []byte("0\tbash\t@0\t2\n"),
+			"tmux display-message -p #{session_name}":                                             []byte("main\n"),
 		},
 	}
 	scanner := tmux.NewScannerWithExecutor(executor)
@@ -264,18 +266,66 @@ func TestCLI_Scan_WithTemplate(t *testing.T) {
 	cli.out = &buf
 	cli.in = strings.NewReader("")
 
-	err := cli.Execute([]string{"scan", "--template", "{{.WindowName}}:{{range .Signals}}{{.State}}{{end}}"})
+	err := cli.Execute([]string{"scan", "--template", "{{.WindowName}} ({{.PaneCount}} panes):{{range .Signals}}{{.State}}{{end}}"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "bash:running") {
-		t.Errorf("Output = %q, want to contain %q", output, "bash:running")
+	if !strings.Contains(output, "bash (2 panes):running") {
+		t.Errorf("Output = %q, want to contain %q", output, "bash (2 panes):running")
 	}
 }
 
 func TestCLI_Scan_SessionScope(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test1"] = &signal.Signal{
+		SessionID:  "test1",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Message:    "claude:running",
+		UpdatedAt:  time.Now(),
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "work",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+			PaneTitle:   "Building",
+		},
+	}
+
+	executor := &mockTmuxExecutor{
+		outputs: map[string][]byte{
+			"tmux list-sessions -F #{session_name}\t#{session_windows}": []byte("main\t1\nwork\t2\n"),
+		},
+	}
+	scanner := tmux.NewScannerWithExecutor(executor)
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.tmuxScanner = scanner
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	err := cli.Execute([]string{"scan", "--scope", "session", "--color=never"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	// work session should have signal with new format
+	if !strings.Contains(output, `work: 2 windows | running: "Building"`) {
+		t.Errorf("Output = %q, want to contain %q", output, `work: 2 windows | running: "Building"`)
+	}
+	// main session should have no signals
+	if !strings.Contains(output, "main: 1 windows") {
+		t.Errorf("Output = %q, want to contain %q", output, "main: 1 windows")
+	}
+}
+
+func TestCLI_Scan_SessionScope_WithTemplate(t *testing.T) {
 	store := newMockSignalStore()
 	store.signals["claude_test1"] = &signal.Signal{
 		SessionID:  "test1",
@@ -294,9 +344,7 @@ func TestCLI_Scan_SessionScope(t *testing.T) {
 
 	executor := &mockTmuxExecutor{
 		outputs: map[string][]byte{
-			"tmux list-sessions -F #{session_name}":                                      []byte("main\nwork\n"),
-			"tmux list-windows -t main -F #{window_index}\t#{window_name}\t#{window_id}": []byte("0\tbash\t@0\n"),
-			"tmux list-windows -t work -F #{window_index}\t#{window_name}\t#{window_id}": []byte("0\tcode\t@1\n"),
+			"tmux list-sessions -F #{session_name}\t#{session_windows}": []byte("work\t3\n"),
 		},
 	}
 	scanner := tmux.NewScannerWithExecutor(executor)
@@ -308,15 +356,14 @@ func TestCLI_Scan_SessionScope(t *testing.T) {
 	cli.out = &buf
 	cli.in = strings.NewReader("")
 
-	err := cli.Execute([]string{"scan", "--scope", "session"})
+	err := cli.Execute([]string{"scan", "--scope", "session", "--template", "{{.SessionName}}: {{.WindowCount}} windows"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	output := buf.String()
-	// work session should have signal
-	if !strings.Contains(output, "0: code:running") {
-		t.Errorf("Output = %q, want to contain %q", output, "0: code:running")
+	if !strings.Contains(output, "work: 3 windows") {
+		t.Errorf("Output = %q, want to contain %q", output, "work: 3 windows")
 	}
 }
 
@@ -327,5 +374,179 @@ func TestCLI_Emit_InvalidJSON(t *testing.T) {
 	err := cli.Execute([]string{"emit", "--env", ""})
 	if err == nil {
 		t.Error("Execute() expected error for invalid JSON, got nil")
+	}
+}
+
+type mockContextProvider struct {
+	env       *signal.Environment
+	paneTitle string // for GetPaneTitle
+}
+
+func (m *mockContextProvider) GetEnvironment() (*signal.Environment, error) {
+	return m.env, nil
+}
+
+func (m *mockContextProvider) GetPaneTitle(paneID string) (string, error) {
+	if m.paneTitle != "" {
+		return m.paneTitle, nil
+	}
+	if m.env != nil {
+		return m.env.PaneTitle, nil
+	}
+	return "", nil
+}
+
+func newTestCLIWithTmux(store *mockSignalStore, input string, provider *mockContextProvider) (*CLI, *bytes.Buffer) {
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.tmuxContextProvider = provider
+	cli.out = &buf
+	cli.in = strings.NewReader(input)
+	return cli, &buf
+}
+
+func TestCLI_Emit_PreservesEnvironment_OnStop(t *testing.T) {
+	store := newMockSignalStore()
+	// Simulate existing signal from SessionStart (window 0)
+	store.signals["claude_test123"] = &signal.Signal{
+		SessionID:  "test123",
+		SignalType: "claude",
+		State:      signal.StateStarted,
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+			PaneTitle:   "Initial",
+		},
+	}
+
+	// Mock provider returns window 1 (simulating user moved to different window)
+	// GetEnvironment would return this (wrong window), but GetPaneTitle uses paneTitle field
+	provider := &mockContextProvider{
+		env: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 1, // Different window!
+			PaneIndex:   0,
+			PaneID:      "%1",
+			PaneTitle:   "WrongPaneTitle", // This should NOT be used
+		},
+		paneTitle: "OriginalPaneTitle", // This should be used (from GetPaneTitle with correct pane ID)
+	}
+
+	cli, _ := newTestCLIWithTmux(store, `{"session_id":"test123","hook_event_name":"Stop"}`, provider)
+
+	err := cli.Execute([]string{"emit"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	sig := store.signals["claude_test123"]
+	if sig == nil {
+		t.Fatal("Signal not stored")
+	}
+	if sig.State != signal.StateIdle {
+		t.Errorf("State = %q, want %q", sig.State, signal.StateIdle)
+	}
+	if sig.Environment == nil {
+		t.Fatal("Environment is nil")
+	}
+	// Window index should be preserved from original signal (0), not current (1)
+	if sig.Environment.WindowIndex != 0 {
+		t.Errorf("WindowIndex = %d, want %d (should be preserved)", sig.Environment.WindowIndex, 0)
+	}
+	// PaneTitle should be updated from the correct pane (via GetPaneTitle), not from GetEnvironment
+	if sig.Environment.PaneTitle != "OriginalPaneTitle" {
+		t.Errorf("PaneTitle = %q, want %q (should be from original pane)", sig.Environment.PaneTitle, "OriginalPaneTitle")
+	}
+}
+
+func TestCLI_Emit_UpdatesPaneTitle_OnStop(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test123"] = &signal.Signal{
+		SessionID:  "test123",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+			PaneTitle:   "OldTitle",
+		},
+	}
+
+	provider := &mockContextProvider{
+		env: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+			PaneTitle:   "NewTitle",
+		},
+	}
+
+	cli, _ := newTestCLIWithTmux(store, `{"session_id":"test123","hook_event_name":"Stop"}`, provider)
+
+	err := cli.Execute([]string{"emit"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	sig := store.signals["claude_test123"]
+	if sig == nil {
+		t.Fatal("Signal not stored")
+	}
+	if sig.Environment.PaneTitle != "NewTitle" {
+		t.Errorf("PaneTitle = %q, want %q", sig.Environment.PaneTitle, "NewTitle")
+	}
+}
+
+func TestCLI_Emit_FreshEnvironment_OnSessionStart(t *testing.T) {
+	store := newMockSignalStore()
+	// No existing signal
+
+	provider := &mockContextProvider{
+		env: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 2,
+			PaneIndex:   1,
+			PaneID:      "%5",
+			PaneTitle:   "Fresh",
+		},
+	}
+
+	cli, _ := newTestCLIWithTmux(store, `{"session_id":"test123","hook_event_name":"SessionStart","source":"cli"}`, provider)
+
+	err := cli.Execute([]string{"emit"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	sig := store.signals["claude_test123"]
+	if sig == nil {
+		t.Fatal("Signal not stored")
+	}
+	if sig.Environment == nil {
+		t.Fatal("Environment is nil")
+	}
+	// Should use fresh environment values
+	if sig.Environment.WindowIndex != 2 {
+		t.Errorf("WindowIndex = %d, want %d", sig.Environment.WindowIndex, 2)
+	}
+	if sig.Environment.PaneIndex != 1 {
+		t.Errorf("PaneIndex = %d, want %d", sig.Environment.PaneIndex, 1)
+	}
+	if sig.Environment.PaneID != "%5" {
+		t.Errorf("PaneID = %q, want %q", sig.Environment.PaneID, "%5")
+	}
+	if sig.Environment.PaneTitle != "Fresh" {
+		t.Errorf("PaneTitle = %q, want %q", sig.Environment.PaneTitle, "Fresh")
 	}
 }

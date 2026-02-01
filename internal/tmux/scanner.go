@@ -24,6 +24,14 @@ type WindowInfo struct {
 	WindowIndex int          `json:"window_index"`
 	WindowName  string       `json:"window_name"`
 	WindowID    string       `json:"window_id"`
+	PaneCount   int          `json:"pane_count"`
+	Signals     []SignalInfo `json:"signals"`
+}
+
+// SessionInfo represents a tmux session with aggregated signals.
+type SessionInfo struct {
+	SessionName string       `json:"session_name"`
+	WindowCount int          `json:"window_count"`
 	Signals     []SignalInfo `json:"signals"`
 }
 
@@ -44,7 +52,7 @@ func NewScannerWithExecutor(executor CommandExecutor) *Scanner {
 
 // ScanWindows scans all windows in the current session and matches signals.
 func (s *Scanner) ScanWindows(signals []*signal.Signal) ([]WindowInfo, error) {
-	output, err := s.executor.Execute("tmux", "list-windows", "-F", "#{window_index}\t#{window_name}\t#{window_id}")
+	output, err := s.executor.Execute("tmux", "list-windows", "-F", "#{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}")
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +78,7 @@ func (s *Scanner) ScanSessions(signals []*signal.Signal) ([]WindowInfo, error) {
 		if sessionName == "" {
 			continue
 		}
-		output, err := s.executor.Execute("tmux", "list-windows", "-t", sessionName, "-F", "#{window_index}\t#{window_name}\t#{window_id}")
+		output, err := s.executor.Execute("tmux", "list-windows", "-t", sessionName, "-F", "#{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}")
 		if err != nil {
 			continue
 		}
@@ -93,7 +101,7 @@ func (s *Scanner) parseWindowsAndMatchSignals(sessionName, output string, signal
 			continue
 		}
 		parts := strings.Split(line, "\t")
-		if len(parts) < 3 {
+		if len(parts) < 4 {
 			continue
 		}
 
@@ -102,11 +110,17 @@ func (s *Scanner) parseWindowsAndMatchSignals(sessionName, output string, signal
 			continue
 		}
 
+		paneCount, err := strconv.Atoi(parts[3])
+		if err != nil {
+			paneCount = 1
+		}
+
 		window := WindowInfo{
 			SessionName: sessionName,
 			WindowIndex: windowIndex,
 			WindowName:  parts[1],
 			WindowID:    parts[2],
+			PaneCount:   paneCount,
 			Signals:     matchSignalsToWindow(signals, sessionName, windowIndex),
 		}
 
@@ -125,6 +139,62 @@ func matchSignalsToWindow(signals []*signal.Signal, sessionName string, windowIn
 			continue
 		}
 		if env.SessionName != sessionName || env.WindowIndex != windowIndex {
+			continue
+		}
+		matched = append(matched, SignalInfo{
+			SessionID:     sig.SessionID,
+			State:         string(sig.State),
+			Message:       sig.Message,
+			CustomMessage: sig.CustomMessage,
+			PaneIndex:     env.PaneIndex,
+			PaneID:        env.PaneID,
+			PaneTitle:     env.PaneTitle,
+		})
+	}
+	return matched
+}
+
+// ScanSessionsAggregated scans all sessions and returns aggregated session info.
+func (s *Scanner) ScanSessionsAggregated(signals []*signal.Signal) ([]SessionInfo, error) {
+	sessionOutput, err := s.executor.Execute("tmux", "list-sessions", "-F", "#{session_name}\t#{session_windows}")
+	if err != nil {
+		return nil, err
+	}
+
+	var sessions []SessionInfo
+	for line := range strings.SplitSeq(strings.TrimSpace(string(sessionOutput)), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "\t")
+		if len(parts) < 2 {
+			continue
+		}
+		sessionName := parts[0]
+		windowCount, err := strconv.Atoi(parts[1])
+		if err != nil {
+			windowCount = 0
+		}
+
+		session := SessionInfo{
+			SessionName: sessionName,
+			WindowCount: windowCount,
+			Signals:     matchSignalsToSession(signals, sessionName),
+		}
+		sessions = append(sessions, session)
+	}
+	return sessions, nil
+}
+
+// matchSignalsToSession finds all signals that belong to a specific tmux session.
+func matchSignalsToSession(signals []*signal.Signal, sessionName string) []SignalInfo {
+	var matched []SignalInfo
+	for _, sig := range signals {
+		env := sig.Environment
+		if env == nil || env.Type != "tmux" {
+			continue
+		}
+		if env.SessionName != sessionName {
 			continue
 		}
 		matched = append(matched, SignalInfo{
