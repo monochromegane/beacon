@@ -53,6 +53,11 @@ func (c *EmitCmd) Run(cli *CLI) error {
 		return store.Delete(c.Signal, event.SessionID)
 	}
 
+	// If ShouldSkip, do not update signal and exit successfully
+	if result.ShouldSkip {
+		return nil
+	}
+
 	// Get environment if specified (preserving existing window/pane info)
 	var env *signal.Environment
 	if c.Env == "tmux" {

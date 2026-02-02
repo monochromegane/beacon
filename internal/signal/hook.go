@@ -18,6 +18,7 @@ type HookEventResult struct {
 	State        State
 	Message      string
 	ShouldDelete bool
+	ShouldSkip   bool // If true, signal update should be skipped
 }
 
 // ParseHookEvent parses a hook event from JSON input.
@@ -48,6 +49,9 @@ func MapEventToState(event *HookEvent) HookEventResult {
 				State:   StateWaiting,
 				Message: "claude:waiting",
 			}
+		}
+		if event.NotificationType == "idle_prompt" {
+			return HookEventResult{ShouldSkip: true}
 		}
 		return HookEventResult{
 			State:   StateRunning,
