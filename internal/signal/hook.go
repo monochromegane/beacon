@@ -44,18 +44,19 @@ func MapEventToState(event *HookEvent) HookEventResult {
 			Message: "claude:running",
 		}
 	case "Notification":
-		if event.NotificationType == "permission_prompt" || event.NotificationType == "elicitation_dialog" {
+		switch event.NotificationType {
+		case "permission_prompt", "elicitation_dialog":
 			return HookEventResult{
 				State:   StateWaiting,
 				Message: "claude:waiting",
 			}
-		}
-		if event.NotificationType == "idle_prompt" {
+		case "idle_prompt":
 			return HookEventResult{ShouldSkip: true}
-		}
-		return HookEventResult{
-			State:   StateRunning,
-			Message: "claude:running",
+		default:
+			return HookEventResult{
+				State:   StateRunning,
+				Message: "claude:running",
+			}
 		}
 	case "Stop":
 		return HookEventResult{
