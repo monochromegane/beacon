@@ -31,6 +31,7 @@ func TestScanner_ScanWindows(t *testing.T) {
 		outputs: map[string][]byte{
 			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}": []byte("0\tbash\t@0\t2\n1\tvim\t@1\t1\n"),
 			"tmux display-message -p #{session_name}":                                             []byte("main\n"),
+			"tmux display-message -t %0 -p #{pane_title}":                                         []byte("⠋ Running tests\n"),
 		},
 	}
 	scanner := NewScannerWithExecutor(executor)
@@ -67,6 +68,9 @@ func TestScanner_ScanWindows(t *testing.T) {
 	if windows[0].Signals[0].SessionID != "test1" {
 		t.Errorf("windows[0].Signals[0].SessionID = %q, want %q", windows[0].Signals[0].SessionID, "test1")
 	}
+	if windows[0].Signals[0].PaneTitle != "Running tests" {
+		t.Errorf("windows[0].Signals[0].PaneTitle = %q, want %q", windows[0].Signals[0].PaneTitle, "Running tests")
+	}
 	if windows[0].PaneCount != 2 {
 		t.Errorf("windows[0].PaneCount = %d, want 2", windows[0].PaneCount)
 	}
@@ -86,6 +90,7 @@ func TestScanner_ScanSessions(t *testing.T) {
 			"tmux list-sessions -F #{session_name}":                                                       []byte("main\nwork\n"),
 			"tmux list-windows -t main -F #{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}": []byte("0\tbash\t@0\t1\n"),
 			"tmux list-windows -t work -F #{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}": []byte("0\tcode\t@1\t3\n"),
+			"tmux display-message -t %0 -p #{pane_title}":                                                 []byte("Coding\n"),
 		},
 	}
 	scanner := NewScannerWithExecutor(executor)
@@ -160,6 +165,8 @@ func TestScanner_ScanSessionsAggregated(t *testing.T) {
 	executor := &mockScannerExecutor{
 		outputs: map[string][]byte{
 			"tmux list-sessions -F #{session_name}\t#{session_windows}": []byte("main\t2\nwork\t3\n"),
+			"tmux display-message -t %0 -p #{pane_title}":               []byte("⠋ Running tests\n"),
+			"tmux display-message -t %1 -p #{pane_title}":               []byte("Idle\n"),
 		},
 	}
 	scanner := NewScannerWithExecutor(executor)
@@ -231,5 +238,60 @@ func TestScanner_ScanSessionsAggregated(t *testing.T) {
 	}
 	if len(workSession.Signals) != 2 {
 		t.Errorf("work session signals = %d, want 2", len(workSession.Signals))
+	}
+
+	// Verify pane titles are fetched from tmux
+	for _, sig := range workSession.Signals {
+		if sig.PaneID == "%0" && sig.PaneTitle != "Running tests" {
+			t.Errorf("signal with PaneID %%0 has PaneTitle = %q, want %q", sig.PaneTitle, "Running tests")
+		}
+		if sig.PaneID == "%1" && sig.PaneTitle != "Idle" {
+			t.Errorf("signal with PaneID %%1 has PaneTitle = %q, want %q", sig.PaneTitle, "Idle")
+		}
+	}
+}
+
+func TestScanner_PaneTitleFallback(t *testing.T) {
+	// Test that when PaneID is empty, the stored pane title is used as fallback
+	executor := &mockScannerExecutor{
+		outputs: map[string][]byte{
+			"tmux list-sessions -F #{session_name}\t#{session_windows}": []byte("main\t1\n"),
+		},
+	}
+	scanner := NewScannerWithExecutor(executor)
+
+	signals := []*signal.Signal{
+		{
+			SessionID:  "test1",
+			SignalType: "claude",
+			State:      signal.StateRunning,
+			Message:    "claude:running",
+			Environment: &signal.Environment{
+				Type:        "tmux",
+				SessionName: "main",
+				WindowIndex: 0,
+				PaneIndex:   0,
+				PaneID:      "", // Empty PaneID triggers fallback
+				PaneTitle:   "Stored title",
+			},
+		},
+	}
+
+	sessions, err := scanner.ScanSessionsAggregated(signals)
+	if err != nil {
+		t.Fatalf("ScanSessionsAggregated() error = %v", err)
+	}
+
+	if len(sessions) != 1 {
+		t.Fatalf("ScanSessionsAggregated() returned %d sessions, want 1", len(sessions))
+	}
+
+	if len(sessions[0].Signals) != 1 {
+		t.Fatalf("session signals = %d, want 1", len(sessions[0].Signals))
+	}
+
+	// When PaneID is empty, should fallback to stored PaneTitle
+	if sessions[0].Signals[0].PaneTitle != "Stored title" {
+		t.Errorf("PaneTitle = %q, want %q (fallback)", sessions[0].Signals[0].PaneTitle, "Stored title")
 	}
 }
