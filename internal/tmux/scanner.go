@@ -37,17 +37,25 @@ type SessionInfo struct {
 
 // Scanner scans tmux windows and sessions for signals.
 type Scanner struct {
-	executor CommandExecutor
+	executor        CommandExecutor
+	contextProvider *ContextProvider
 }
 
 // NewScanner creates a new Scanner with the default executor.
 func NewScanner() *Scanner {
-	return &Scanner{executor: &DefaultExecutor{}}
+	executor := &DefaultExecutor{}
+	return &Scanner{
+		executor:        executor,
+		contextProvider: NewContextProviderWithExecutor(executor),
+	}
 }
 
 // NewScannerWithExecutor creates a new Scanner with a custom executor (for testing).
 func NewScannerWithExecutor(executor CommandExecutor) *Scanner {
-	return &Scanner{executor: executor}
+	return &Scanner{
+		executor:        executor,
+		contextProvider: NewContextProviderWithExecutor(executor),
+	}
 }
 
 // ScanWindows scans all windows in the current session and matches signals.
@@ -121,7 +129,7 @@ func (s *Scanner) parseWindowsAndMatchSignals(sessionName, output string, signal
 			WindowName:  parts[1],
 			WindowID:    parts[2],
 			PaneCount:   paneCount,
-			Signals:     matchSignalsToWindow(signals, sessionName, windowIndex),
+			Signals:     s.matchSignalsToWindow(signals, sessionName, windowIndex),
 		}
 
 		windows = append(windows, window)
@@ -131,7 +139,7 @@ func (s *Scanner) parseWindowsAndMatchSignals(sessionName, output string, signal
 }
 
 // matchSignalsToWindow finds all signals that belong to a specific tmux window.
-func matchSignalsToWindow(signals []*signal.Signal, sessionName string, windowIndex int) []SignalInfo {
+func (s *Scanner) matchSignalsToWindow(signals []*signal.Signal, sessionName string, windowIndex int) []SignalInfo {
 	var matched []SignalInfo
 	for _, sig := range signals {
 		env := sig.Environment
@@ -141,6 +149,12 @@ func matchSignalsToWindow(signals []*signal.Signal, sessionName string, windowIn
 		if env.SessionName != sessionName || env.WindowIndex != windowIndex {
 			continue
 		}
+		paneTitle := env.PaneTitle
+		if env.PaneID != "" {
+			if title, err := s.contextProvider.GetPaneTitle(env.PaneID); err == nil {
+				paneTitle = title
+			}
+		}
 		matched = append(matched, SignalInfo{
 			SessionID:     sig.SessionID,
 			State:         string(sig.State),
@@ -148,7 +162,7 @@ func matchSignalsToWindow(signals []*signal.Signal, sessionName string, windowIn
 			CustomMessage: sig.CustomMessage,
 			PaneIndex:     env.PaneIndex,
 			PaneID:        env.PaneID,
-			PaneTitle:     env.PaneTitle,
+			PaneTitle:     paneTitle,
 		})
 	}
 	return matched
@@ -179,7 +193,7 @@ func (s *Scanner) ScanSessionsAggregated(signals []*signal.Signal) ([]SessionInf
 		session := SessionInfo{
 			SessionName: sessionName,
 			WindowCount: windowCount,
-			Signals:     matchSignalsToSession(signals, sessionName),
+			Signals:     s.matchSignalsToSession(signals, sessionName),
 		}
 		sessions = append(sessions, session)
 	}
@@ -187,7 +201,7 @@ func (s *Scanner) ScanSessionsAggregated(signals []*signal.Signal) ([]SessionInf
 }
 
 // matchSignalsToSession finds all signals that belong to a specific tmux session.
-func matchSignalsToSession(signals []*signal.Signal, sessionName string) []SignalInfo {
+func (s *Scanner) matchSignalsToSession(signals []*signal.Signal, sessionName string) []SignalInfo {
 	var matched []SignalInfo
 	for _, sig := range signals {
 		env := sig.Environment
@@ -197,6 +211,12 @@ func matchSignalsToSession(signals []*signal.Signal, sessionName string) []Signa
 		if env.SessionName != sessionName {
 			continue
 		}
+		paneTitle := env.PaneTitle
+		if env.PaneID != "" {
+			if title, err := s.contextProvider.GetPaneTitle(env.PaneID); err == nil {
+				paneTitle = title
+			}
+		}
 		matched = append(matched, SignalInfo{
 			SessionID:     sig.SessionID,
 			State:         string(sig.State),
@@ -204,7 +224,7 @@ func matchSignalsToSession(signals []*signal.Signal, sessionName string) []Signa
 			CustomMessage: sig.CustomMessage,
 			PaneIndex:     env.PaneIndex,
 			PaneID:        env.PaneID,
-			PaneTitle:     env.PaneTitle,
+			PaneTitle:     paneTitle,
 		})
 	}
 	return matched

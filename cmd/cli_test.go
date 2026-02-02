@@ -208,6 +208,7 @@ func TestCLI_Scan_Default(t *testing.T) {
 		outputs: map[string][]byte{
 			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}": []byte("0\tbash\t@0\t2\n1\tvim\t@1\t1\n"),
 			"tmux display-message -p #{session_name}":                                             []byte("main\n"),
+			"tmux display-message -t %0 -p #{pane_title}":                                         []byte("⠋ Building\n"),
 		},
 	}
 	scanner := tmux.NewScannerWithExecutor(executor)
@@ -298,6 +299,7 @@ func TestCLI_Scan_SessionScope(t *testing.T) {
 	executor := &mockTmuxExecutor{
 		outputs: map[string][]byte{
 			"tmux list-sessions -F #{session_name}\t#{session_windows}": []byte("main\t1\nwork\t2\n"),
+			"tmux display-message -t %0 -p #{pane_title}":               []byte("⠋ Building\n"),
 		},
 	}
 	scanner := tmux.NewScannerWithExecutor(executor)
