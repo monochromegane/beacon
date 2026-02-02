@@ -18,6 +18,7 @@ type HookEventResult struct {
 	State        State
 	Message      string
 	ShouldDelete bool
+	ShouldSkip   bool // If true, signal update should be skipped
 }
 
 // ParseHookEvent parses a hook event from JSON input.
@@ -43,15 +44,19 @@ func MapEventToState(event *HookEvent) HookEventResult {
 			Message: "claude:running",
 		}
 	case "Notification":
-		if event.NotificationType == "permission_prompt" || event.NotificationType == "elicitation_dialog" {
+		switch event.NotificationType {
+		case "permission_prompt", "elicitation_dialog":
 			return HookEventResult{
 				State:   StateWaiting,
 				Message: "claude:waiting",
 			}
-		}
-		return HookEventResult{
-			State:   StateRunning,
-			Message: "claude:running",
+		case "idle_prompt":
+			return HookEventResult{ShouldSkip: true}
+		default:
+			return HookEventResult{
+				State:   StateRunning,
+				Message: "claude:running",
+			}
 		}
 	case "Stop":
 		return HookEventResult{

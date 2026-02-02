@@ -65,6 +65,7 @@ func TestMapEventToState(t *testing.T) {
 		wantState   State
 		wantMessage string
 		wantDelete  bool
+		wantSkip    bool
 	}{
 		{
 			name:        "SessionStart",
@@ -103,6 +104,11 @@ func TestMapEventToState(t *testing.T) {
 			wantMessage: "claude:running",
 		},
 		{
+			name:     "Notification idle_prompt",
+			event:    &HookEvent{HookEventName: "Notification", NotificationType: "idle_prompt"},
+			wantSkip: true,
+		},
+		{
 			name:        "Stop",
 			event:       &HookEvent{HookEventName: "Stop"},
 			wantState:   StateIdle,
@@ -127,7 +133,10 @@ func TestMapEventToState(t *testing.T) {
 			if result.ShouldDelete != tt.wantDelete {
 				t.Errorf("ShouldDelete = %v, want %v", result.ShouldDelete, tt.wantDelete)
 			}
-			if !tt.wantDelete {
+			if result.ShouldSkip != tt.wantSkip {
+				t.Errorf("ShouldSkip = %v, want %v", result.ShouldSkip, tt.wantSkip)
+			}
+			if !tt.wantDelete && !tt.wantSkip {
 				if result.State != tt.wantState {
 					t.Errorf("State = %q, want %q", result.State, tt.wantState)
 				}

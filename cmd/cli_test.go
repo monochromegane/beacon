@@ -550,3 +550,43 @@ func TestCLI_Emit_FreshEnvironment_OnSessionStart(t *testing.T) {
 		t.Errorf("PaneTitle = %q, want %q", sig.Environment.PaneTitle, "Fresh")
 	}
 }
+
+func TestCLI_Emit_IdlePrompt_PreservesState(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test123"] = &signal.Signal{
+		SessionID:  "test123",
+		SignalType: "claude",
+		State:      signal.StateIdle,
+		Message:    "claude:idle",
+	}
+
+	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"Notification","notification_type":"idle_prompt"}`)
+
+	err := cli.Execute([]string{"emit", "--env", ""})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	sig := store.signals["claude_test123"]
+	// State should be preserved (not changed)
+	if sig.State != signal.StateIdle {
+		t.Errorf("State = %q, want %q (should be preserved)", sig.State, signal.StateIdle)
+	}
+}
+
+func TestCLI_Emit_IdlePrompt_NoExistingSignal(t *testing.T) {
+	store := newMockSignalStore()
+	// No signal
+
+	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"Notification","notification_type":"idle_prompt"}`)
+
+	err := cli.Execute([]string{"emit", "--env", ""})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	// Signal should NOT be created for idle_prompt
+	if _, exists := store.signals["claude_test123"]; exists {
+		t.Error("Signal should NOT be created for idle_prompt")
+	}
+}
