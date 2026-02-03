@@ -113,11 +113,12 @@ func (c *EmitCmd) getPreservedEnvironment(cli *CLI, store signal.Store, sessionI
 
 // ScanCmd scans tmux windows/sessions for signals.
 type ScanCmd struct {
-	Signal   string `name:"signal" short:"S" help:"Signal type" default:"claude" enum:"claude"`
-	Env      string `name:"env" short:"E" help:"Environment type" default:"tmux" enum:"tmux"`
-	Scope    string `name:"scope" short:"s" help:"Scan scope" default:"window" enum:"window,session"`
-	Template string `name:"template" short:"t" help:"Go template for output"`
-	Color    string `name:"color" help:"Color output: always, auto, never" default:"auto" enum:"always,auto,never"`
+	Signal      string `name:"signal" short:"S" help:"Signal type" default:"claude" enum:"claude"`
+	Env         string `name:"env" short:"E" help:"Environment type" default:"tmux" enum:"tmux"`
+	Scope       string `name:"scope" short:"s" help:"Scan scope: window or session" default:"window" enum:"window,session"`
+	AllSessions bool   `name:"all-sessions" short:"a" help:"Scan all sessions instead of current session only"`
+	Template    string `name:"template" short:"t" help:"Go template for output"`
+	Color       string `name:"color" help:"Color output: always, auto, never" default:"auto" enum:"always,auto,never"`
 }
 
 func (c *ScanCmd) Run(cli *CLI) error {
@@ -135,6 +136,16 @@ func (c *ScanCmd) Run(cli *CLI) error {
 
 	switch c.Scope {
 	case "window":
+		if c.AllSessions {
+			windows, err := scanner.ScanSessions(signals)
+			if err != nil {
+				return err
+			}
+			if c.Template != "" {
+				return c.outputWindowsWithTemplate(cli.out, windows)
+			}
+			return c.outputAllWindowsDefault(cli.out, windows)
+		}
 		windows, err := scanner.ScanWindows(signals)
 		if err != nil {
 			return err
@@ -144,7 +155,17 @@ func (c *ScanCmd) Run(cli *CLI) error {
 		}
 		return c.outputWindowsDefault(cli.out, windows)
 	case "session":
-		sessions, err := scanner.ScanSessionsAggregated(signals)
+		if c.AllSessions {
+			sessions, err := scanner.ScanSessionsAggregated(signals)
+			if err != nil {
+				return err
+			}
+			if c.Template != "" {
+				return c.outputSessionsWithTemplate(cli.out, sessions)
+			}
+			return c.outputSessionsDefault(cli.out, sessions)
+		}
+		sessions, err := scanner.ScanCurrentSessionAggregated(signals)
 		if err != nil {
 			return err
 		}
@@ -176,6 +197,18 @@ func (c *ScanCmd) outputSessionsDefault(out io.Writer, sessions []tmux.SessionIn
 
 	for _, s := range sessions {
 		fmt.Fprintln(out, formatter.FormatSession(s))
+	}
+	return nil
+}
+
+// outputAllWindowsDefault outputs all windows from all sessions with session name prefix.
+func (c *ScanCmd) outputAllWindowsDefault(out io.Writer, windows []tmux.WindowInfo) error {
+	useColor := output.ShouldUseColor(c.Color)
+	scheme := output.NewColorScheme(useColor)
+	formatter := output.NewFormatter(scheme)
+
+	for _, w := range windows {
+		fmt.Fprintln(out, formatter.FormatWindowWithSession(w))
 	}
 	return nil
 }
