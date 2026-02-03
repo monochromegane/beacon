@@ -246,3 +246,44 @@ func TestFormatter_FormatWindow_WithColor(t *testing.T) {
 		t.Error("FormatWindow() with color should be longer due to escape codes")
 	}
 }
+
+func TestFormatter_FormatWindowWithSession(t *testing.T) {
+	scheme := NewColorScheme(false)
+	formatter := NewFormatter(scheme)
+
+	window := tmux.WindowInfo{
+		SessionName: "work",
+		WindowIndex: 0,
+		WindowName:  "dev",
+		PaneCount:   3,
+		Signals: []tmux.SignalInfo{
+			{State: "running", PaneTitle: "Building project"},
+			{State: "waiting", PaneTitle: "Reviewing PR"},
+		},
+	}
+
+	result := formatter.FormatWindowWithSession(window)
+	expected := `work:0: dev (3 panes) | waiting: "Reviewing PR", running: "Building project"`
+	if result != expected {
+		t.Errorf("FormatWindowWithSession() = %q, want %q", result, expected)
+	}
+}
+
+func TestFormatter_FormatWindowWithSession_NoSignals(t *testing.T) {
+	scheme := NewColorScheme(false)
+	formatter := NewFormatter(scheme)
+
+	window := tmux.WindowInfo{
+		SessionName: "popup_claude_test",
+		WindowIndex: 0,
+		WindowName:  "claude",
+		PaneCount:   1,
+		Signals:     nil,
+	}
+
+	result := formatter.FormatWindowWithSession(window)
+	expected := "popup_claude_test:0: claude (1 panes)"
+	if result != expected {
+		t.Errorf("FormatWindowWithSession() = %q, want %q", result, expected)
+	}
+}

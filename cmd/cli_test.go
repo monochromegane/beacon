@@ -592,3 +592,115 @@ func TestCLI_Emit_IdlePrompt_NoExistingSignal(t *testing.T) {
 		t.Error("Signal should NOT be created for idle_prompt")
 	}
 }
+
+func TestCLI_Scan_AllScope(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test1"] = &signal.Signal{
+		SessionID:  "test1",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Message:    "claude:running",
+		UpdatedAt:  time.Now(),
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+			PaneTitle:   "Building",
+		},
+	}
+	store.signals["claude_test2"] = &signal.Signal{
+		SessionID:  "test2",
+		SignalType: "claude",
+		State:      signal.StateWaiting,
+		Message:    "claude:waiting",
+		UpdatedAt:  time.Now(),
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "popup_claude_myrepo",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%5",
+			PaneTitle:   "Reviewing",
+		},
+	}
+
+	executor := &mockTmuxExecutor{
+		outputs: map[string][]byte{
+			"tmux list-sessions -F #{session_name}":                                                                      []byte("main\npopup_claude_myrepo\n"),
+			"tmux list-windows -t main -F #{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}":                []byte("0\tbash\t@0\t2\n1\tvim\t@1\t1\n"),
+			"tmux list-windows -t popup_claude_myrepo -F #{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}": []byte("0\tclaude\t@2\t1\n"),
+			"tmux display-message -t %0 -p #{pane_title}":                                                                []byte("Building\n"),
+			"tmux display-message -t %5 -p #{pane_title}":                                                                []byte("Reviewing\n"),
+		},
+	}
+	scanner := tmux.NewScannerWithExecutor(executor)
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.tmuxScanner = scanner
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	err := cli.Execute([]string{"scan", "--scope", "all", "--color=never"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	// New format with session prefix: {session}:{index}: {name} ({panes} panes) | {state}: "{title}"
+	if !strings.Contains(output, `main:0: bash (2 panes) | running: "Building"`) {
+		t.Errorf("Output = %q, want to contain %q", output, `main:0: bash (2 panes) | running: "Building"`)
+	}
+	if !strings.Contains(output, "main:1: vim (1 panes)") {
+		t.Errorf("Output = %q, want to contain %q", output, "main:1: vim (1 panes)")
+	}
+	if !strings.Contains(output, `popup_claude_myrepo:0: claude (1 panes) | waiting: "Reviewing"`) {
+		t.Errorf("Output = %q, want to contain %q", output, `popup_claude_myrepo:0: claude (1 panes) | waiting: "Reviewing"`)
+	}
+}
+
+func TestCLI_Scan_AllScope_WithTemplate(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test1"] = &signal.Signal{
+		SessionID:  "test1",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Message:    "claude:running",
+		UpdatedAt:  time.Now(),
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "work",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+		},
+	}
+
+	executor := &mockTmuxExecutor{
+		outputs: map[string][]byte{
+			"tmux list-sessions -F #{session_name}":                                                       []byte("work\n"),
+			"tmux list-windows -t work -F #{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}": []byte("0\tbash\t@0\t2\n"),
+		},
+	}
+	scanner := tmux.NewScannerWithExecutor(executor)
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.tmuxScanner = scanner
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	err := cli.Execute([]string{"scan", "--scope", "all", "--template", "{{.SessionName}}:{{.WindowIndex}}"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "work:0") {
+		t.Errorf("Output = %q, want to contain %q", output, "work:0")
+	}
+}

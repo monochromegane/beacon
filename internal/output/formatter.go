@@ -103,3 +103,15 @@ func (f *Formatter) FormatSession(s tmux.SessionInfo) string {
 	}
 	return fmt.Sprintf("%s: %d windows", s.SessionName, s.WindowCount)
 }
+
+// FormatWindowWithSession formats a single window line with session name prefix.
+// Output format: "{session}:{index}: {name} ({panes} panes) | {signals}"
+func (f *Formatter) FormatWindowWithSession(w tmux.WindowInfo) string {
+	signalsStr := f.FormatSignals(w.Signals)
+	if signalsStr != "" {
+		return fmt.Sprintf("%s:%d: %s (%d panes) | %s",
+			w.SessionName, w.WindowIndex, w.WindowName, w.PaneCount, signalsStr)
+	}
+	return fmt.Sprintf("%s:%d: %s (%d panes)",
+		w.SessionName, w.WindowIndex, w.WindowName, w.PaneCount)
+}
