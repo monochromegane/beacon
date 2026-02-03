@@ -278,7 +278,56 @@ func TestCLI_Scan_WithTemplate(t *testing.T) {
 	}
 }
 
-func TestCLI_Scan_SessionScope(t *testing.T) {
+func TestCLI_Scan_SessionScope_CurrentOnly(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test1"] = &signal.Signal{
+		SessionID:  "test1",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Message:    "claude:running",
+		UpdatedAt:  time.Now(),
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "work",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+			PaneTitle:   "Building",
+		},
+	}
+
+	executor := &mockTmuxExecutor{
+		outputs: map[string][]byte{
+			"tmux display-message -p #{session_name}\t#{session_windows}": []byte("work\t2\n"),
+			"tmux display-message -t %0 -p #{pane_title}":                 []byte("⠋ Building\n"),
+		},
+	}
+	scanner := tmux.NewScannerWithExecutor(executor)
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.tmuxScanner = scanner
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	err := cli.Execute([]string{"scan", "--scope", "session", "--color=never"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	// Only current session (work) should be shown
+	if !strings.Contains(output, `work: 2 windows | running: "Building"`) {
+		t.Errorf("Output = %q, want to contain %q", output, `work: 2 windows | running: "Building"`)
+	}
+	// main session should NOT be in output (current session only)
+	if strings.Contains(output, "main") {
+		t.Errorf("Output = %q, should NOT contain main session", output)
+	}
+}
+
+func TestCLI_Scan_SessionScope_AllSessions(t *testing.T) {
 	store := newMockSignalStore()
 	store.signals["claude_test1"] = &signal.Signal{
 		SessionID:  "test1",
@@ -311,7 +360,7 @@ func TestCLI_Scan_SessionScope(t *testing.T) {
 	cli.out = &buf
 	cli.in = strings.NewReader("")
 
-	err := cli.Execute([]string{"scan", "--scope", "session", "--color=never"})
+	err := cli.Execute([]string{"scan", "--scope", "session", "-a", "--color=never"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -346,7 +395,7 @@ func TestCLI_Scan_SessionScope_WithTemplate(t *testing.T) {
 
 	executor := &mockTmuxExecutor{
 		outputs: map[string][]byte{
-			"tmux list-sessions -F #{session_name}\t#{session_windows}": []byte("work\t3\n"),
+			"tmux display-message -p #{session_name}\t#{session_windows}": []byte("work\t3\n"),
 		},
 	}
 	scanner := tmux.NewScannerWithExecutor(executor)
@@ -593,7 +642,7 @@ func TestCLI_Emit_IdlePrompt_NoExistingSignal(t *testing.T) {
 	}
 }
 
-func TestCLI_Scan_AllScope(t *testing.T) {
+func TestCLI_Scan_Window_AllSessions(t *testing.T) {
 	store := newMockSignalStore()
 	store.signals["claude_test1"] = &signal.Signal{
 		SessionID:  "test1",
@@ -644,7 +693,7 @@ func TestCLI_Scan_AllScope(t *testing.T) {
 	cli.out = &buf
 	cli.in = strings.NewReader("")
 
-	err := cli.Execute([]string{"scan", "--scope", "all", "--color=never"})
+	err := cli.Execute([]string{"scan", "--scope", "window", "-a", "--color=never"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -662,7 +711,7 @@ func TestCLI_Scan_AllScope(t *testing.T) {
 	}
 }
 
-func TestCLI_Scan_AllScope_WithTemplate(t *testing.T) {
+func TestCLI_Scan_Window_AllSessions_WithTemplate(t *testing.T) {
 	store := newMockSignalStore()
 	store.signals["claude_test1"] = &signal.Signal{
 		SessionID:  "test1",
@@ -694,7 +743,7 @@ func TestCLI_Scan_AllScope_WithTemplate(t *testing.T) {
 	cli.out = &buf
 	cli.in = strings.NewReader("")
 
-	err := cli.Execute([]string{"scan", "--scope", "all", "--template", "{{.SessionName}}:{{.WindowIndex}}"})
+	err := cli.Execute([]string{"scan", "--scope", "window", "-a", "--template", "{{.SessionName}}:{{.WindowIndex}}"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}

@@ -200,6 +200,33 @@ func (s *Scanner) ScanSessionsAggregated(signals []*signal.Signal) ([]SessionInf
 	return sessions, nil
 }
 
+// ScanCurrentSessionAggregated scans the current session and returns aggregated session info.
+func (s *Scanner) ScanCurrentSessionAggregated(signals []*signal.Signal) ([]SessionInfo, error) {
+	sessionOutput, err := s.executor.Execute("tmux", "display-message", "-p", "#{session_name}\t#{session_windows}")
+	if err != nil {
+		return nil, err
+	}
+
+	line := strings.TrimSpace(string(sessionOutput))
+	parts := strings.Split(line, "\t")
+	if len(parts) < 2 {
+		return nil, nil
+	}
+
+	sessionName := parts[0]
+	windowCount, err := strconv.Atoi(parts[1])
+	if err != nil {
+		windowCount = 0
+	}
+
+	session := SessionInfo{
+		SessionName: sessionName,
+		WindowCount: windowCount,
+		Signals:     s.matchSignalsToSession(signals, sessionName),
+	}
+	return []SessionInfo{session}, nil
+}
+
 // matchSignalsToSession finds all signals that belong to a specific tmux session.
 func (s *Scanner) matchSignalsToSession(signals []*signal.Signal, sessionName string) []SignalInfo {
 	var matched []SignalInfo
