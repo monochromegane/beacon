@@ -1,5 +1,8 @@
 # Changelog
 
+## [v0.1.2](https://github.com/monochromegane/beacon/compare/v0.1.1...v0.1.2) - 2026-02-03
+- Add 'all' scope to scan command for cross-session window listing by @monochromegane in https://github.com/monochromegane/beacon/pull/16
+
 ## [v0.1.1](https://github.com/monochromegane/beacon/compare/v0.1.0...v0.1.1) - 2026-02-02
 - Skip signal update on idle_prompt to preserve current state by @monochromegane in https://github.com/monochromegane/beacon/pull/13
 - Fetch latest pane title from tmux by @monochromegane in https://github.com/monochromegane/beacon/pull/15
