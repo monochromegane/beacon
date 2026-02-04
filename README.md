@@ -28,6 +28,24 @@ beacon provides two main commands:
 - `beacon emit` - Emits signals from Claude Code hooks (reads JSON from stdin)
 - `beacon scan` - Scans tmux for signals and displays status
 
+### Interactive Session Selector with fzf
+
+Use `beacon scan` with fzf to interactively select Claude Code sessions by their state:
+
+```bash
+beacon scan --color=always | fzf --ansi | xargs tmux select-window -t
+```
+
+Example output:
+
+```
+0: beacon/readme (2 panes) | running: "Update README"
+1: myproject/main (1 panes) | idle: "Fix bug", waiting: "Review changes"
+2: docs/feature (1 panes)
+```
+
+Each line shows the tmux window with Claude Code session states (idle, running, waiting, started).
+
 ## Claude Code Hooks Configuration
 
 Add the following hooks to `~/.config/claude/settings.json`:
