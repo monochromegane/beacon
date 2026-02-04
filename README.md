@@ -104,6 +104,8 @@ stateDiagram-v2
 
 ## Tmux Status Line Example
 
+`beacon scan` supports Go templates via the `--template` option, allowing flexible output formatting.
+
 Create a script (e.g., `beacon-status`) that uses a Go template to display colored status indicators:
 
 ```bash
