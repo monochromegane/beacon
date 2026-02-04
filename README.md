@@ -8,6 +8,15 @@ beacon is a CLI tool that tracks Claude Code session states within tmux.
 
 ## Installation
 
+### Homebrew
+
+```bash
+brew tap monochromegane/tap
+brew install monochromegane/tap/beacon
+```
+
+### Go
+
 ```bash
 go install github.com/monochromegane/beacon@latest
 ```
