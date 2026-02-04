@@ -46,6 +46,45 @@ Example output:
 
 Each line shows the tmux window with Claude Code session states (idle, running, waiting, started).
 
+## State Transitions
+
+beacon converts Claude Code hook events into four states for easier monitoring:
+
+| State | Description |
+|-------|-------------|
+| **started** | Session has begun |
+| **running** | Agent is processing (user prompt or tool execution) |
+| **waiting** | Agent is waiting for user input (permission or dialog) |
+| **idle** | Agent has stopped execution |
+
+### State Diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> started : SessionStart
+    started --> running : UserPromptSubmit
+    running --> running : PreToolUse
+    running --> waiting : Notification (permission/dialog)
+    waiting --> running : User responds
+    running --> idle : Stop
+    idle --> running : UserPromptSubmit
+    idle --> [*] : SessionEnd
+    started --> [*] : SessionEnd
+    running --> [*] : SessionEnd
+```
+
+### Event to State Mapping
+
+| Hook Event | State | Notes |
+|------------|-------|-------|
+| SessionStart | started | Session initialized |
+| UserPromptSubmit | running | User input being processed |
+| PreToolUse | running | Tool execution in progress |
+| Notification (permission_prompt) | waiting | Awaiting permission confirmation |
+| Notification (elicitation_dialog) | waiting | Awaiting dialog response |
+| Stop | idle | Execution stopped |
+| SessionEnd | (removed) | Signal file deleted |
+
 ## Claude Code Hooks Configuration
 
 Add the following hooks to `~/.config/claude/settings.json`:
