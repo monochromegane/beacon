@@ -138,6 +138,26 @@ func (s *Scanner) parseWindowsAndMatchSignals(sessionName, output string, signal
 	return windows, nil
 }
 
+// signalToInfo converts a Signal to SignalInfo, fetching the current pane title if possible.
+func (s *Scanner) signalToInfo(sig *signal.Signal) SignalInfo {
+	env := sig.Environment
+	paneTitle := env.PaneTitle
+	if env.PaneID != "" {
+		if title, err := s.contextProvider.GetPaneTitle(env.PaneID); err == nil {
+			paneTitle = title
+		}
+	}
+	return SignalInfo{
+		SessionID:     sig.SessionID,
+		State:         string(sig.State),
+		Message:       sig.Message,
+		CustomMessage: sig.CustomMessage,
+		PaneIndex:     env.PaneIndex,
+		PaneID:        env.PaneID,
+		PaneTitle:     paneTitle,
+	}
+}
+
 // matchSignalsToWindow finds all signals that belong to a specific tmux window.
 func (s *Scanner) matchSignalsToWindow(signals []*signal.Signal, sessionName string, windowIndex int) []SignalInfo {
 	var matched []SignalInfo
@@ -149,21 +169,7 @@ func (s *Scanner) matchSignalsToWindow(signals []*signal.Signal, sessionName str
 		if env.SessionName != sessionName || env.WindowIndex != windowIndex {
 			continue
 		}
-		paneTitle := env.PaneTitle
-		if env.PaneID != "" {
-			if title, err := s.contextProvider.GetPaneTitle(env.PaneID); err == nil {
-				paneTitle = title
-			}
-		}
-		matched = append(matched, SignalInfo{
-			SessionID:     sig.SessionID,
-			State:         string(sig.State),
-			Message:       sig.Message,
-			CustomMessage: sig.CustomMessage,
-			PaneIndex:     env.PaneIndex,
-			PaneID:        env.PaneID,
-			PaneTitle:     paneTitle,
-		})
+		matched = append(matched, s.signalToInfo(sig))
 	}
 	return matched
 }
@@ -238,21 +244,7 @@ func (s *Scanner) matchSignalsToSession(signals []*signal.Signal, sessionName st
 		if env.SessionName != sessionName {
 			continue
 		}
-		paneTitle := env.PaneTitle
-		if env.PaneID != "" {
-			if title, err := s.contextProvider.GetPaneTitle(env.PaneID); err == nil {
-				paneTitle = title
-			}
-		}
-		matched = append(matched, SignalInfo{
-			SessionID:     sig.SessionID,
-			State:         string(sig.State),
-			Message:       sig.Message,
-			CustomMessage: sig.CustomMessage,
-			PaneIndex:     env.PaneIndex,
-			PaneID:        env.PaneID,
-			PaneTitle:     paneTitle,
-		})
+		matched = append(matched, s.signalToInfo(sig))
 	}
 	return matched
 }
