@@ -16,6 +16,17 @@ var statePriority = map[string]int{
 	"running": 3,
 }
 
+// unknownStatePriority is used for states not in the priority map
+const unknownStatePriority = 99
+
+// getPriority returns the sorting priority for a state.
+func getPriority(state string) int {
+	if p, ok := statePriority[state]; ok {
+		return p
+	}
+	return unknownStatePriority
+}
+
 // Formatter handles formatting of scan output with optional color support.
 type Formatter struct {
 	scheme ColorScheme
@@ -31,32 +42,20 @@ func SortByPriority(signals []tmux.SignalInfo) []tmux.SignalInfo {
 	sorted := make([]tmux.SignalInfo, len(signals))
 	copy(sorted, signals)
 	sort.SliceStable(sorted, func(i, j int) bool {
-		pi := statePriority[sorted[i].State]
-		pj := statePriority[sorted[j].State]
-		if pi == 0 {
-			pi = 99 // unknown states go last
-		}
-		if pj == 0 {
-			pj = 99
-		}
-		return pi < pj
+		return getPriority(sorted[i].State) < getPriority(sorted[j].State)
 	})
 	return sorted
 }
 
 // ColorizeState applies color to a state string.
 func (f *Formatter) ColorizeState(state string) string {
-	var color string
-	switch state {
-	case "waiting":
-		color = f.scheme.Waiting
-	case "idle":
-		color = f.scheme.Idle
-	case "started":
-		color = f.scheme.Started
-	case "running":
-		color = f.scheme.Running
+	colorMap := map[string]string{
+		"waiting": f.scheme.Waiting,
+		"idle":    f.scheme.Idle,
+		"started": f.scheme.Started,
+		"running": f.scheme.Running,
 	}
+	color := colorMap[state]
 	if color == "" {
 		return state
 	}
