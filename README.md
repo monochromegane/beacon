@@ -114,7 +114,17 @@ TEMPLATE='{{$i:=false}}{{$r:=false}}{{$w:=false}}{{$s:=false}}{{range .Sessions}
 beacon scan --scope session -a --template "$TEMPLATE" 2>/dev/null
 ```
 
-States: idle (cyan), running (green), waiting (yellow), started (blue)
+Output indicators:
+
+```
+●●●●
+│││└─ started (blue)
+││└── waiting (yellow)
+│└─── running (green)
+└──── idle (cyan)
+```
+
+Each indicator lights up in color when that state is active, otherwise displays white.
 
 Add to your `tmux.conf`:
 
