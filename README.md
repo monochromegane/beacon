@@ -6,21 +6,6 @@
 
 beacon is a CLI tool that tracks Claude Code session states within tmux.
 
-## Installation
-
-### Homebrew
-
-```bash
-brew tap monochromegane/tap
-brew install monochromegane/tap/beacon
-```
-
-### Go
-
-```bash
-go install github.com/monochromegane/beacon@latest
-```
-
 ## Usage
 
 beacon provides two main commands:
@@ -45,6 +30,38 @@ Example output:
 ```
 
 Each line shows the tmux window with Claude Code session states (idle, running, waiting, started).
+
+## Installation
+
+### Homebrew
+
+```bash
+brew tap monochromegane/tap
+brew install monochromegane/tap/beacon
+```
+
+### Go
+
+```bash
+go install github.com/monochromegane/beacon@latest
+```
+
+## Claude Code Hooks Configuration
+
+Add the following hooks to `~/.config/claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
+    "Notification": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }]
+  }
+}
+```
 
 ## State Transitions
 
@@ -84,23 +101,6 @@ stateDiagram-v2
 | Notification (elicitation_dialog) | waiting | Awaiting dialog response |
 | Stop | idle | Execution stopped |
 | SessionEnd | (removed) | Signal file deleted |
-
-## Claude Code Hooks Configuration
-
-Add the following hooks to `~/.config/claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
-    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
-    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
-    "Notification": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }]
-  }
-}
-```
 
 ## Tmux Status Line Example
 
