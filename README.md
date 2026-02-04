@@ -6,6 +6,16 @@
 
 beacon is a CLI tool that tracks Claude Code session states within tmux.
 
+When running multiple Claude Code sessions in tmux, it can be difficult to know which sessions need attention. beacon solves this by providing real-time visibility into your Claude Code agents' activity.
+
+**Key Features:**
+
+- **Real-time state tracking** - Converts Claude Code hook events into four intuitive states: `started`, `running`, `waiting`, and `idle`
+- **Lightweight design** - No daemon required; uses simple file-based signaling
+- **Flexible output** - Supports Go templates for custom formatting
+- **tmux integration** - Display session status in your tmux status line
+- **fzf compatible** - Quickly navigate to sessions needing attention
+
 ## Usage
 
 beacon provides two main commands:
