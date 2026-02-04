@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -220,28 +219,17 @@ func (c *ScanCmd) outputWindowsWithTemplate(out io.Writer, windows []tmux.Window
 		return err
 	}
 
-	for _, w := range windows {
-		// Convert window to map for template
-		data := map[string]any{
-			"SessionName": w.SessionName,
-			"WindowIndex": w.WindowIndex,
-			"WindowName":  w.WindowName,
-			"WindowID":    w.WindowID,
-			"PaneCount":   w.PaneCount,
-			"Signals":     w.Signals,
-		}
-		// Also provide JSON of signals for advanced processing
-		signalsJSON, _ := json.Marshal(w.Signals)
-		data["SignalsJSON"] = string(signalsJSON)
+	data := map[string]any{
+		"Windows": windows,
+	}
 
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, data); err != nil {
-			return err
-		}
-		// Only output if template produced non-empty result
-		if result := strings.TrimSpace(buf.String()); result != "" {
-			fmt.Fprintln(out, result)
-		}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return err
+	}
+	// Only output if template produced non-empty result
+	if result := strings.TrimSpace(buf.String()); result != "" {
+		fmt.Fprintln(out, result)
 	}
 	return nil
 }
@@ -253,25 +241,17 @@ func (c *ScanCmd) outputSessionsWithTemplate(out io.Writer, sessions []tmux.Sess
 		return err
 	}
 
-	for _, s := range sessions {
-		// Convert session to map for template
-		data := map[string]any{
-			"SessionName": s.SessionName,
-			"WindowCount": s.WindowCount,
-			"Signals":     s.Signals,
-		}
-		// Also provide JSON of signals for advanced processing
-		signalsJSON, _ := json.Marshal(s.Signals)
-		data["SignalsJSON"] = string(signalsJSON)
+	data := map[string]any{
+		"Sessions": sessions,
+	}
 
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, data); err != nil {
-			return err
-		}
-		// Only output if template produced non-empty result
-		if result := strings.TrimSpace(buf.String()); result != "" {
-			fmt.Fprintln(out, result)
-		}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return err
+	}
+	// Only output if template produced non-empty result
+	if result := strings.TrimSpace(buf.String()); result != "" {
+		fmt.Fprintln(out, result)
 	}
 	return nil
 }
