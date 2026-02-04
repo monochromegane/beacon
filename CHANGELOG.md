@@ -1,5 +1,8 @@
 # Changelog
 
+## [v0.2.0](https://github.com/monochromegane/beacon/compare/v0.1.3...v0.2.0) - 2026-02-04
+- Readme by @monochromegane in https://github.com/monochromegane/beacon/pull/20
+
 ## [v0.1.3](https://github.com/monochromegane/beacon/compare/v0.1.2...v0.1.3) - 2026-02-04
 - Change template to receive all items at once by @monochromegane in https://github.com/monochromegane/beacon/pull/18
 
