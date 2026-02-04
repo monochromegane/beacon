@@ -267,7 +267,7 @@ func TestCLI_Scan_WithTemplate(t *testing.T) {
 	cli.out = &buf
 	cli.in = strings.NewReader("")
 
-	err := cli.Execute([]string{"scan", "--template", "{{.WindowName}} ({{.PaneCount}} panes):{{range .Signals}}{{.State}}{{end}}"})
+	err := cli.Execute([]string{"scan", "--template", "{{range .Windows}}{{.WindowName}} ({{.PaneCount}} panes):{{range .Signals}}{{.State}}{{end}}{{end}}"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -407,7 +407,7 @@ func TestCLI_Scan_SessionScope_WithTemplate(t *testing.T) {
 	cli.out = &buf
 	cli.in = strings.NewReader("")
 
-	err := cli.Execute([]string{"scan", "--scope", "session", "--template", "{{.SessionName}}: {{.WindowCount}} windows"})
+	err := cli.Execute([]string{"scan", "--scope", "session", "--template", "{{range .Sessions}}{{.SessionName}}: {{.WindowCount}} windows{{end}}"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -743,7 +743,7 @@ func TestCLI_Scan_Window_AllSessions_WithTemplate(t *testing.T) {
 	cli.out = &buf
 	cli.in = strings.NewReader("")
 
-	err := cli.Execute([]string{"scan", "--scope", "window", "-a", "--template", "{{.SessionName}}:{{.WindowIndex}}"})
+	err := cli.Execute([]string{"scan", "--scope", "window", "-a", "--template", "{{range .Windows}}{{.SessionName}}:{{.WindowIndex}}{{end}}"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
