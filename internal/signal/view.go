@@ -10,19 +10,21 @@ type View struct {
 }
 
 // ToView converts a Signal to a View for display.
+// Title resolution: PaneTitle (from environment) takes precedence, then CustomMessage.
 func (s *Signal) ToView() View {
-	title := ""
-	if s.Environment != nil {
-		title = s.Environment.PaneTitle
-	}
-	if title == "" {
-		title = s.CustomMessage
-	}
 	return View{
 		SessionID:     s.SessionID,
 		State:         string(s.State),
 		Message:       s.Message,
 		CustomMessage: s.CustomMessage,
-		Title:         title,
+		Title:         s.resolveTitle(),
 	}
+}
+
+// resolveTitle returns the display title using PaneTitle with CustomMessage as fallback.
+func (s *Signal) resolveTitle() string {
+	if s.Environment != nil && s.Environment.PaneTitle != "" {
+		return s.Environment.PaneTitle
+	}
+	return s.CustomMessage
 }

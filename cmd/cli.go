@@ -156,12 +156,7 @@ func (c *ScanCmd) runWithoutEnv(cli *CLI, signals []*signal.Signal) error {
 
 	sorted := output.SortByPriority(views)
 	for _, sig := range sorted {
-		coloredState := formatter.ColorizeState(sig.State)
-		if sig.Title != "" {
-			fmt.Fprintf(cli.out, "%s: %q\n", coloredState, sig.Title)
-		} else {
-			fmt.Fprintln(cli.out, coloredState)
-		}
+		fmt.Fprintln(cli.out, formatter.FormatSignal(sig))
 	}
 	return nil
 }

@@ -773,11 +773,7 @@ func TestCLI_Scan_WithoutEnv_Default(t *testing.T) {
 		UpdatedAt:     time.Now(),
 	}
 
-	var buf bytes.Buffer
-	cli := NewCLI()
-	cli.signalStore = store
-	cli.out = &buf
-	cli.in = strings.NewReader("")
+	cli, buf := newTestCLI(store, "")
 
 	err := cli.Execute([]string{"scan", "--env", "none", "--color=never"})
 	if err != nil {
@@ -804,11 +800,7 @@ func TestCLI_Scan_WithoutEnv_WithTemplate(t *testing.T) {
 		UpdatedAt:     time.Now(),
 	}
 
-	var buf bytes.Buffer
-	cli := NewCLI()
-	cli.signalStore = store
-	cli.out = &buf
-	cli.in = strings.NewReader("")
+	cli, buf := newTestCLI(store, "")
 
 	err := cli.Execute([]string{"scan", "--env", "none", "--template", "{{range .Signals}}{{.State}}:{{.Title}}{{end}}"})
 	if err != nil {
@@ -823,12 +815,7 @@ func TestCLI_Scan_WithoutEnv_WithTemplate(t *testing.T) {
 
 func TestCLI_Scan_WithoutEnv_NoSignals(t *testing.T) {
 	store := newMockSignalStore()
-
-	var buf bytes.Buffer
-	cli := NewCLI()
-	cli.signalStore = store
-	cli.out = &buf
-	cli.in = strings.NewReader("")
+	cli, buf := newTestCLI(store, "")
 
 	err := cli.Execute([]string{"scan", "--env", "none", "--color=never"})
 	if err != nil {
@@ -859,11 +846,7 @@ func TestCLI_Scan_WithoutEnv_TitleFallback(t *testing.T) {
 		},
 	}
 
-	var buf bytes.Buffer
-	cli := NewCLI()
-	cli.signalStore = store
-	cli.out = &buf
-	cli.in = strings.NewReader("")
+	cli, buf := newTestCLI(store, "")
 
 	err := cli.Execute([]string{"scan", "--env", "none", "--color=never"})
 	if err != nil {
@@ -902,12 +885,8 @@ func TestCLI_Scan_Tmux_WindowTemplate_WithSignals(t *testing.T) {
 	}
 	scanner := tmux.NewScannerWithExecutor(executor)
 
-	var buf bytes.Buffer
-	cli := NewCLI()
-	cli.signalStore = store
+	cli, buf := newTestCLI(store, "")
 	cli.tmuxScanner = scanner
-	cli.out = &buf
-	cli.in = strings.NewReader("")
 
 	// Use .Signals (flat) in tmux window template
 	err := cli.Execute([]string{"scan", "--template", "{{range .Signals}}{{.State}}{{end}}"})

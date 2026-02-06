@@ -63,6 +63,15 @@ func (f *Formatter) ColorizeState(state string) string {
 	return color + state + f.scheme.Reset
 }
 
+// FormatSignal formats a single signal as 'state: "title"' or just 'state' if no title.
+func (f *Formatter) FormatSignal(sig signal.View) string {
+	coloredState := f.ColorizeState(sig.State)
+	if sig.Title != "" {
+		return fmt.Sprintf("%s: %q", coloredState, sig.Title)
+	}
+	return coloredState
+}
+
 // FormatSignals formats signals as 'state: "title", ...' sorted by priority.
 func (f *Formatter) FormatSignals(signals []signal.View) string {
 	if len(signals) == 0 {
@@ -72,12 +81,7 @@ func (f *Formatter) FormatSignals(signals []signal.View) string {
 	sorted := SortByPriority(signals)
 	parts := make([]string, len(sorted))
 	for i, sig := range sorted {
-		coloredState := f.ColorizeState(sig.State)
-		if sig.Title != "" {
-			parts[i] = fmt.Sprintf("%s: %q", coloredState, sig.Title)
-		} else {
-			parts[i] = coloredState
-		}
+		parts[i] = f.FormatSignal(sig)
 	}
 	return strings.Join(parts, ", ")
 }
