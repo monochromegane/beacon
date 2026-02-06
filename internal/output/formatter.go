@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/monochromegane/beacon/internal/signal"
 	"github.com/monochromegane/beacon/internal/tmux"
 )
 
@@ -38,8 +39,8 @@ func NewFormatter(scheme ColorScheme) *Formatter {
 }
 
 // SortByPriority sorts signals by state priority (waiting > idle/started > running).
-func SortByPriority(signals []tmux.SignalInfo) []tmux.SignalInfo {
-	sorted := make([]tmux.SignalInfo, len(signals))
+func SortByPriority(signals []signal.View) []signal.View {
+	sorted := make([]signal.View, len(signals))
 	copy(sorted, signals)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		return getPriority(sorted[i].State) < getPriority(sorted[j].State)
@@ -63,7 +64,7 @@ func (f *Formatter) ColorizeState(state string) string {
 }
 
 // FormatSignals formats signals as 'state: "title", ...' sorted by priority.
-func (f *Formatter) FormatSignals(signals []tmux.SignalInfo) string {
+func (f *Formatter) FormatSignals(signals []signal.View) string {
 	if len(signals) == 0 {
 		return ""
 	}
@@ -71,13 +72,9 @@ func (f *Formatter) FormatSignals(signals []tmux.SignalInfo) string {
 	sorted := SortByPriority(signals)
 	parts := make([]string, len(sorted))
 	for i, sig := range sorted {
-		title := sig.PaneTitle
-		if title == "" {
-			title = sig.CustomMessage
-		}
 		coloredState := f.ColorizeState(sig.State)
-		if title != "" {
-			parts[i] = fmt.Sprintf("%s: %q", coloredState, title)
+		if sig.Title != "" {
+			parts[i] = fmt.Sprintf("%s: %q", coloredState, sig.Title)
 		} else {
 			parts[i] = coloredState
 		}

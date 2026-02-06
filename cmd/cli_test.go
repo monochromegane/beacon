@@ -77,7 +77,7 @@ func TestCLI_Emit_SessionStart(t *testing.T) {
 	store := newMockSignalStore()
 	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"SessionStart","source":"cli"}`)
 
-	err := cli.Execute([]string{"emit", "--env", ""})
+	err := cli.Execute([]string{"emit", "--env", "none"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -98,7 +98,7 @@ func TestCLI_Emit_UserPromptSubmit(t *testing.T) {
 	store := newMockSignalStore()
 	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"UserPromptSubmit"}`)
 
-	err := cli.Execute([]string{"emit", "--env", ""})
+	err := cli.Execute([]string{"emit", "--env", "none"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -116,7 +116,7 @@ func TestCLI_Emit_Stop(t *testing.T) {
 	store := newMockSignalStore()
 	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"Stop"}`)
 
-	err := cli.Execute([]string{"emit", "--env", ""})
+	err := cli.Execute([]string{"emit", "--env", "none"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -140,7 +140,7 @@ func TestCLI_Emit_SessionEnd(t *testing.T) {
 
 	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"SessionEnd"}`)
 
-	err := cli.Execute([]string{"emit", "--env", ""})
+	err := cli.Execute([]string{"emit", "--env", "none"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -154,7 +154,7 @@ func TestCLI_Emit_WithCustomMessage(t *testing.T) {
 	store := newMockSignalStore()
 	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"UserPromptSubmit"}`)
 
-	err := cli.Execute([]string{"emit", "--env", "", "custom message"})
+	err := cli.Execute([]string{"emit", "--env", "none", "custom message"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -172,7 +172,7 @@ func TestCLI_Emit_Notification_PermissionPrompt(t *testing.T) {
 	store := newMockSignalStore()
 	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"Notification","notification_type":"permission_prompt"}`)
 
-	err := cli.Execute([]string{"emit", "--env", ""})
+	err := cli.Execute([]string{"emit", "--env", "none"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -422,7 +422,7 @@ func TestCLI_Emit_InvalidJSON(t *testing.T) {
 	store := newMockSignalStore()
 	cli, _ := newTestCLI(store, `{invalid}`)
 
-	err := cli.Execute([]string{"emit", "--env", ""})
+	err := cli.Execute([]string{"emit", "--env", "none"})
 	if err == nil {
 		t.Error("Execute() expected error for invalid JSON, got nil")
 	}
@@ -613,7 +613,7 @@ func TestCLI_Emit_IdlePrompt_PreservesState(t *testing.T) {
 
 	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"Notification","notification_type":"idle_prompt"}`)
 
-	err := cli.Execute([]string{"emit", "--env", ""})
+	err := cli.Execute([]string{"emit", "--env", "none"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -631,7 +631,7 @@ func TestCLI_Emit_IdlePrompt_NoExistingSignal(t *testing.T) {
 
 	cli, _ := newTestCLI(store, `{"session_id":"test123","hook_event_name":"Notification","notification_type":"idle_prompt"}`)
 
-	err := cli.Execute([]string{"emit", "--env", ""})
+	err := cli.Execute([]string{"emit", "--env", "none"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -751,5 +751,172 @@ func TestCLI_Scan_Window_AllSessions_WithTemplate(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "work:0") {
 		t.Errorf("Output = %q, want to contain %q", output, "work:0")
+	}
+}
+
+func TestCLI_Scan_WithoutEnv_Default(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test1"] = &signal.Signal{
+		SessionID:     "test1",
+		SignalType:    "claude",
+		State:         signal.StateRunning,
+		Message:       "claude:running",
+		CustomMessage: "Building",
+		UpdatedAt:     time.Now(),
+	}
+	store.signals["claude_test2"] = &signal.Signal{
+		SessionID:     "test2",
+		SignalType:    "claude",
+		State:         signal.StateWaiting,
+		Message:       "claude:waiting",
+		CustomMessage: "Review",
+		UpdatedAt:     time.Now(),
+	}
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	err := cli.Execute([]string{"scan", "--env", "none", "--color=never"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, `waiting: "Review"`) {
+		t.Errorf("Output = %q, want to contain %q", output, `waiting: "Review"`)
+	}
+	if !strings.Contains(output, `running: "Building"`) {
+		t.Errorf("Output = %q, want to contain %q", output, `running: "Building"`)
+	}
+}
+
+func TestCLI_Scan_WithoutEnv_WithTemplate(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test1"] = &signal.Signal{
+		SessionID:     "test1",
+		SignalType:    "claude",
+		State:         signal.StateRunning,
+		Message:       "claude:running",
+		CustomMessage: "Building",
+		UpdatedAt:     time.Now(),
+	}
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	err := cli.Execute([]string{"scan", "--env", "none", "--template", "{{range .Signals}}{{.State}}:{{.Title}}{{end}}"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "running:Building") {
+		t.Errorf("Output = %q, want to contain %q", output, "running:Building")
+	}
+}
+
+func TestCLI_Scan_WithoutEnv_NoSignals(t *testing.T) {
+	store := newMockSignalStore()
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	err := cli.Execute([]string{"scan", "--env", "none", "--color=never"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	if output != "" {
+		t.Errorf("Output = %q, want empty string", output)
+	}
+}
+
+func TestCLI_Scan_WithoutEnv_TitleFallback(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test1"] = &signal.Signal{
+		SessionID:  "test1",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Message:    "claude:running",
+		UpdatedAt:  time.Now(),
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+			PaneTitle:   "PaneTitle",
+		},
+	}
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	err := cli.Execute([]string{"scan", "--env", "none", "--color=never"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	// Should use PaneTitle from Environment via ToView()
+	if !strings.Contains(output, `running: "PaneTitle"`) {
+		t.Errorf("Output = %q, want to contain %q", output, `running: "PaneTitle"`)
+	}
+}
+
+func TestCLI_Scan_Tmux_WindowTemplate_WithSignals(t *testing.T) {
+	store := newMockSignalStore()
+	store.signals["claude_test1"] = &signal.Signal{
+		SessionID:  "test1",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Message:    "claude:running",
+		UpdatedAt:  time.Now(),
+		Environment: &signal.Environment{
+			Type:        "tmux",
+			SessionName: "main",
+			WindowIndex: 0,
+			PaneIndex:   0,
+			PaneID:      "%0",
+		},
+	}
+
+	executor := &mockTmuxExecutor{
+		outputs: map[string][]byte{
+			"tmux list-windows -F #{window_index}\t#{window_name}\t#{window_id}\t#{window_panes}": []byte("0\tbash\t@0\t2\n"),
+			"tmux display-message -p #{session_name}":                                             []byte("main\n"),
+		},
+	}
+	scanner := tmux.NewScannerWithExecutor(executor)
+
+	var buf bytes.Buffer
+	cli := NewCLI()
+	cli.signalStore = store
+	cli.tmuxScanner = scanner
+	cli.out = &buf
+	cli.in = strings.NewReader("")
+
+	// Use .Signals (flat) in tmux window template
+	err := cli.Execute([]string{"scan", "--template", "{{range .Signals}}{{.State}}{{end}}"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "running") {
+		t.Errorf("Output = %q, want to contain %q", output, "running")
 	}
 }
