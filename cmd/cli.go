@@ -27,7 +27,7 @@ type EnvironmentProvider interface {
 // EmitCmd emits a beacon signal based on hook events from stdin.
 type EmitCmd struct {
 	Signal  string `name:"signal" short:"S" help:"Signal type" default:"claude" enum:"claude"`
-	Env     string `name:"env" short:"E" help:"Environment type" default:"tmux" enum:"tmux,"`
+	Env     string `name:"env" short:"E" help:"Environment type" default:"tmux" enum:"tmux,none"`
 	Message string `arg:"" optional:"" help:"Optional custom message"`
 }
 
@@ -113,7 +113,7 @@ func (c *EmitCmd) getPreservedEnvironment(cli *CLI, store signal.Store, sessionI
 // ScanCmd scans tmux windows/sessions for signals.
 type ScanCmd struct {
 	Signal      string `name:"signal" short:"S" help:"Signal type" default:"claude" enum:"claude"`
-	Env         string `name:"env" short:"E" help:"Environment type" default:"tmux" enum:"tmux"`
+	Env         string `name:"env" short:"E" help:"Environment type" default:"tmux" enum:"tmux,none"`
 	Scope       string `name:"scope" short:"s" help:"Scan scope: window or session" default:"window" enum:"window,session"`
 	AllSessions bool   `name:"all-sessions" short:"a" help:"Scan all sessions instead of current session only"`
 	Template    string `name:"template" short:"t" help:"Go template for output"`
@@ -131,6 +131,38 @@ func (c *ScanCmd) Run(cli *CLI) error {
 		return err
 	}
 
+	if c.Env == "none" {
+		return c.runWithoutEnv(cli, signals)
+	}
+	return c.runWithTmux(cli, signals)
+}
+
+// runWithoutEnv outputs signals without tmux dependency.
+func (c *ScanCmd) runWithoutEnv(cli *CLI, signals []*signal.Signal) error {
+	views := make([]signal.View, len(signals))
+	for i, sig := range signals {
+		views[i] = sig.ToView()
+	}
+
+	if c.Template != "" {
+		return c.outputWithTemplate(cli.out, map[string]any{
+			"Signals": views,
+		})
+	}
+
+	useColor := output.ShouldUseColor(c.Color)
+	scheme := output.NewColorScheme(useColor)
+	formatter := output.NewFormatter(scheme)
+
+	sorted := output.SortByPriority(views)
+	for _, sig := range sorted {
+		fmt.Fprintln(cli.out, formatter.FormatSignal(sig))
+	}
+	return nil
+}
+
+// runWithTmux outputs signals using tmux scanner.
+func (c *ScanCmd) runWithTmux(cli *CLI, signals []*signal.Signal) error {
 	scanner := cli.getTmuxScanner()
 
 	switch c.Scope {
@@ -212,15 +244,11 @@ func (c *ScanCmd) outputAllWindowsDefault(out io.Writer, windows []tmux.WindowIn
 	return nil
 }
 
-// outputWindowsWithTemplate outputs windows using a Go template.
-func (c *ScanCmd) outputWindowsWithTemplate(out io.Writer, windows []tmux.WindowInfo) error {
+// outputWithTemplate outputs data using a Go template.
+func (c *ScanCmd) outputWithTemplate(out io.Writer, data map[string]any) error {
 	tmpl, err := template.New("scan").Parse(c.Template)
 	if err != nil {
 		return err
-	}
-
-	data := map[string]any{
-		"Windows": windows,
 	}
 
 	var buf bytes.Buffer
@@ -234,26 +262,38 @@ func (c *ScanCmd) outputWindowsWithTemplate(out io.Writer, windows []tmux.Window
 	return nil
 }
 
+// flattenWindowSignals collects all signals from windows into a flat slice.
+func flattenWindowSignals(windows []tmux.WindowInfo) []signal.View {
+	var views []signal.View
+	for _, w := range windows {
+		views = append(views, w.Signals...)
+	}
+	return views
+}
+
+// flattenSessionSignals collects all signals from sessions into a flat slice.
+func flattenSessionSignals(sessions []tmux.SessionInfo) []signal.View {
+	var views []signal.View
+	for _, s := range sessions {
+		views = append(views, s.Signals...)
+	}
+	return views
+}
+
+// outputWindowsWithTemplate outputs windows using a Go template.
+func (c *ScanCmd) outputWindowsWithTemplate(out io.Writer, windows []tmux.WindowInfo) error {
+	return c.outputWithTemplate(out, map[string]any{
+		"Windows": windows,
+		"Signals": flattenWindowSignals(windows),
+	})
+}
+
 // outputSessionsWithTemplate outputs sessions using a Go template.
 func (c *ScanCmd) outputSessionsWithTemplate(out io.Writer, sessions []tmux.SessionInfo) error {
-	tmpl, err := template.New("scan").Parse(c.Template)
-	if err != nil {
-		return err
-	}
-
-	data := map[string]any{
+	return c.outputWithTemplate(out, map[string]any{
 		"Sessions": sessions,
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return err
-	}
-	// Only output if template produced non-empty result
-	if result := strings.TrimSpace(buf.String()); result != "" {
-		fmt.Fprintln(out, result)
-	}
-	return nil
+		"Signals":  flattenSessionSignals(sessions),
+	})
 }
 
 // CLI represents the beacon command-line interface.

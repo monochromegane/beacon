@@ -7,32 +7,21 @@ import (
 	"github.com/monochromegane/beacon/internal/signal"
 )
 
-// SignalInfo represents signal information for a pane within a window.
-type SignalInfo struct {
-	SessionID     string `json:"session_id"`
-	State         string `json:"state"`
-	Message       string `json:"message"`
-	CustomMessage string `json:"custom_message,omitempty"`
-	PaneIndex     int    `json:"pane_index"`
-	PaneID        string `json:"pane_id"`
-	PaneTitle     string `json:"pane_title"`
-}
-
 // WindowInfo represents a tmux window with its signals.
 type WindowInfo struct {
-	SessionName string       `json:"session_name"`
-	WindowIndex int          `json:"window_index"`
-	WindowName  string       `json:"window_name"`
-	WindowID    string       `json:"window_id"`
-	PaneCount   int          `json:"pane_count"`
-	Signals     []SignalInfo `json:"signals"`
+	SessionName string        `json:"session_name"`
+	WindowIndex int           `json:"window_index"`
+	WindowName  string        `json:"window_name"`
+	WindowID    string        `json:"window_id"`
+	PaneCount   int           `json:"pane_count"`
+	Signals     []signal.View `json:"signals"`
 }
 
 // SessionInfo represents a tmux session with aggregated signals.
 type SessionInfo struct {
-	SessionName string       `json:"session_name"`
-	WindowCount int          `json:"window_count"`
-	Signals     []SignalInfo `json:"signals"`
+	SessionName string        `json:"session_name"`
+	WindowCount int           `json:"window_count"`
+	Signals     []signal.View `json:"signals"`
 }
 
 // Scanner scans tmux windows and sessions for signals.
@@ -138,29 +127,20 @@ func (s *Scanner) parseWindowsAndMatchSignals(sessionName, output string, signal
 	return windows, nil
 }
 
-// signalToInfo converts a Signal to SignalInfo, fetching the current pane title if possible.
-func (s *Scanner) signalToInfo(sig *signal.Signal) SignalInfo {
-	env := sig.Environment
-	paneTitle := env.PaneTitle
-	if env.PaneID != "" {
-		if title, err := s.contextProvider.GetPaneTitle(env.PaneID); err == nil {
-			paneTitle = title
+// signalToView converts a Signal to signal.View, fetching the current pane title if possible.
+func (s *Scanner) signalToView(sig *signal.Signal) signal.View {
+	view := sig.ToView()
+	if sig.Environment != nil && sig.Environment.PaneID != "" {
+		if title, err := s.contextProvider.GetPaneTitle(sig.Environment.PaneID); err == nil {
+			view.Title = title
 		}
 	}
-	return SignalInfo{
-		SessionID:     sig.SessionID,
-		State:         string(sig.State),
-		Message:       sig.Message,
-		CustomMessage: sig.CustomMessage,
-		PaneIndex:     env.PaneIndex,
-		PaneID:        env.PaneID,
-		PaneTitle:     paneTitle,
-	}
+	return view
 }
 
 // matchSignalsToWindow finds all signals that belong to a specific tmux window.
-func (s *Scanner) matchSignalsToWindow(signals []*signal.Signal, sessionName string, windowIndex int) []SignalInfo {
-	var matched []SignalInfo
+func (s *Scanner) matchSignalsToWindow(signals []*signal.Signal, sessionName string, windowIndex int) []signal.View {
+	var matched []signal.View
 	for _, sig := range signals {
 		env := sig.Environment
 		if env == nil || env.Type != "tmux" {
@@ -169,7 +149,7 @@ func (s *Scanner) matchSignalsToWindow(signals []*signal.Signal, sessionName str
 		if env.SessionName != sessionName || env.WindowIndex != windowIndex {
 			continue
 		}
-		matched = append(matched, s.signalToInfo(sig))
+		matched = append(matched, s.signalToView(sig))
 	}
 	return matched
 }
@@ -234,8 +214,8 @@ func (s *Scanner) ScanCurrentSessionAggregated(signals []*signal.Signal) ([]Sess
 }
 
 // matchSignalsToSession finds all signals that belong to a specific tmux session.
-func (s *Scanner) matchSignalsToSession(signals []*signal.Signal, sessionName string) []SignalInfo {
-	var matched []SignalInfo
+func (s *Scanner) matchSignalsToSession(signals []*signal.Signal, sessionName string) []signal.View {
+	var matched []signal.View
 	for _, sig := range signals {
 		env := sig.Environment
 		if env == nil || env.Type != "tmux" {
@@ -244,7 +224,7 @@ func (s *Scanner) matchSignalsToSession(signals []*signal.Signal, sessionName st
 		if env.SessionName != sessionName {
 			continue
 		}
-		matched = append(matched, s.signalToInfo(sig))
+		matched = append(matched, s.signalToView(sig))
 	}
 	return matched
 }

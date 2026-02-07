@@ -3,16 +3,17 @@ package output
 import (
 	"testing"
 
+	"github.com/monochromegane/beacon/internal/signal"
 	"github.com/monochromegane/beacon/internal/tmux"
 )
 
 func TestSortByPriority(t *testing.T) {
-	signals := []tmux.SignalInfo{
-		{State: "running", PaneTitle: "Task 1"},
-		{State: "waiting", PaneTitle: "Task 2"},
-		{State: "idle", PaneTitle: "Task 3"},
-		{State: "started", PaneTitle: "Task 4"},
-		{State: "running", PaneTitle: "Task 5"},
+	signals := []signal.View{
+		{State: "running", Title: "Task 1"},
+		{State: "waiting", Title: "Task 2"},
+		{State: "idle", Title: "Task 3"},
+		{State: "started", Title: "Task 4"},
+		{State: "running", Title: "Task 5"},
 	}
 
 	sorted := SortByPriority(signals)
@@ -32,23 +33,23 @@ func TestSortByPriority(t *testing.T) {
 }
 
 func TestSortByPriority_PreservesOrderWithinSamePriority(t *testing.T) {
-	signals := []tmux.SignalInfo{
-		{State: "idle", PaneTitle: "First idle"},
-		{State: "started", PaneTitle: "First started"},
-		{State: "idle", PaneTitle: "Second idle"},
+	signals := []signal.View{
+		{State: "idle", Title: "First idle"},
+		{State: "started", Title: "First started"},
+		{State: "idle", Title: "Second idle"},
 	}
 
 	sorted := SortByPriority(signals)
 
 	// idle and started have same priority (2), so relative order should be preserved
-	if sorted[0].PaneTitle != "First idle" {
-		t.Errorf("sorted[0].PaneTitle = %q, want %q", sorted[0].PaneTitle, "First idle")
+	if sorted[0].Title != "First idle" {
+		t.Errorf("sorted[0].Title = %q, want %q", sorted[0].Title, "First idle")
 	}
-	if sorted[1].PaneTitle != "First started" {
-		t.Errorf("sorted[1].PaneTitle = %q, want %q", sorted[1].PaneTitle, "First started")
+	if sorted[1].Title != "First started" {
+		t.Errorf("sorted[1].Title = %q, want %q", sorted[1].Title, "First started")
 	}
-	if sorted[2].PaneTitle != "Second idle" {
-		t.Errorf("sorted[2].PaneTitle = %q, want %q", sorted[2].PaneTitle, "Second idle")
+	if sorted[2].Title != "Second idle" {
+		t.Errorf("sorted[2].Title = %q, want %q", sorted[2].Title, "Second idle")
 	}
 }
 
@@ -92,9 +93,9 @@ func TestFormatter_FormatSignals(t *testing.T) {
 	scheme := NewColorScheme(false)
 	formatter := NewFormatter(scheme)
 
-	signals := []tmux.SignalInfo{
-		{State: "running", PaneTitle: "Building project"},
-		{State: "waiting", PaneTitle: "Reviewing PR"},
+	signals := []signal.View{
+		{State: "running", Title: "Building project"},
+		{State: "waiting", Title: "Reviewing PR"},
 	}
 
 	result := formatter.FormatSignals(signals)
@@ -118,8 +119,8 @@ func TestFormatter_FormatSignals_NoTitle(t *testing.T) {
 	scheme := NewColorScheme(false)
 	formatter := NewFormatter(scheme)
 
-	signals := []tmux.SignalInfo{
-		{State: "running", PaneTitle: ""},
+	signals := []signal.View{
+		{State: "running", Title: ""},
 	}
 
 	result := formatter.FormatSignals(signals)
@@ -133,8 +134,8 @@ func TestFormatter_FormatSignals_UsesCustomMessageWhenNoTitle(t *testing.T) {
 	scheme := NewColorScheme(false)
 	formatter := NewFormatter(scheme)
 
-	signals := []tmux.SignalInfo{
-		{State: "running", PaneTitle: "", CustomMessage: "Custom task"},
+	signals := []signal.View{
+		{State: "running", Title: "Custom task"},
 	}
 
 	result := formatter.FormatSignals(signals)
@@ -152,10 +153,10 @@ func TestFormatter_FormatWindow(t *testing.T) {
 		WindowIndex: 0,
 		WindowName:  "dev",
 		PaneCount:   3,
-		Signals: []tmux.SignalInfo{
-			{State: "running", PaneTitle: "Building project"},
-			{State: "waiting", PaneTitle: "Reviewing PR"},
-			{State: "running", PaneTitle: "Running tests"},
+		Signals: []signal.View{
+			{State: "running", Title: "Building project"},
+			{State: "waiting", Title: "Reviewing PR"},
+			{State: "running", Title: "Running tests"},
 		},
 	}
 
@@ -191,10 +192,10 @@ func TestFormatter_FormatSession(t *testing.T) {
 	session := tmux.SessionInfo{
 		SessionName: "work",
 		WindowCount: 5,
-		Signals: []tmux.SignalInfo{
-			{State: "running", PaneTitle: "Building"},
-			{State: "waiting", PaneTitle: "Reviewing PR"},
-			{State: "waiting", PaneTitle: "User input"},
+		Signals: []signal.View{
+			{State: "running", Title: "Building"},
+			{State: "waiting", Title: "Reviewing PR"},
+			{State: "waiting", Title: "User input"},
 		},
 	}
 
@@ -230,9 +231,9 @@ func TestFormatter_FormatWindow_WithColor(t *testing.T) {
 		WindowIndex: 0,
 		WindowName:  "dev",
 		PaneCount:   2,
-		Signals: []tmux.SignalInfo{
-			{State: "waiting", PaneTitle: "Review"},
-			{State: "running", PaneTitle: "Build"},
+		Signals: []signal.View{
+			{State: "waiting", Title: "Review"},
+			{State: "running", Title: "Build"},
 		},
 	}
 
@@ -256,9 +257,9 @@ func TestFormatter_FormatWindowWithSession(t *testing.T) {
 		WindowIndex: 0,
 		WindowName:  "dev",
 		PaneCount:   3,
-		Signals: []tmux.SignalInfo{
-			{State: "running", PaneTitle: "Building project"},
-			{State: "waiting", PaneTitle: "Reviewing PR"},
+		Signals: []signal.View{
+			{State: "running", Title: "Building project"},
+			{State: "waiting", Title: "Reviewing PR"},
 		},
 	}
 

@@ -68,8 +68,8 @@ func TestScanner_ScanWindows(t *testing.T) {
 	if windows[0].Signals[0].SessionID != "test1" {
 		t.Errorf("windows[0].Signals[0].SessionID = %q, want %q", windows[0].Signals[0].SessionID, "test1")
 	}
-	if windows[0].Signals[0].PaneTitle != "Running tests" {
-		t.Errorf("windows[0].Signals[0].PaneTitle = %q, want %q", windows[0].Signals[0].PaneTitle, "Running tests")
+	if windows[0].Signals[0].Title != "Running tests" {
+		t.Errorf("windows[0].Signals[0].Title = %q, want %q", windows[0].Signals[0].Title, "Running tests")
 	}
 	if windows[0].PaneCount != 2 {
 		t.Errorf("windows[0].PaneCount = %d, want 2", windows[0].PaneCount)
@@ -242,11 +242,11 @@ func TestScanner_ScanSessionsAggregated(t *testing.T) {
 
 	// Verify pane titles are fetched from tmux
 	for _, sig := range workSession.Signals {
-		if sig.PaneID == "%0" && sig.PaneTitle != "Running tests" {
-			t.Errorf("signal with PaneID %%0 has PaneTitle = %q, want %q", sig.PaneTitle, "Running tests")
+		if sig.SessionID == "test1" && sig.Title != "Running tests" {
+			t.Errorf("signal test1 has Title = %q, want %q", sig.Title, "Running tests")
 		}
-		if sig.PaneID == "%1" && sig.PaneTitle != "Idle" {
-			t.Errorf("signal with PaneID %%1 has PaneTitle = %q, want %q", sig.PaneTitle, "Idle")
+		if sig.SessionID == "test2" && sig.Title != "Idle" {
+			t.Errorf("signal test2 has Title = %q, want %q", sig.Title, "Idle")
 		}
 	}
 }
@@ -290,8 +290,8 @@ func TestScanner_PaneTitleFallback(t *testing.T) {
 		t.Fatalf("session signals = %d, want 1", len(sessions[0].Signals))
 	}
 
-	// When PaneID is empty, should fallback to stored PaneTitle
-	if sessions[0].Signals[0].PaneTitle != "Stored title" {
-		t.Errorf("PaneTitle = %q, want %q (fallback)", sessions[0].Signals[0].PaneTitle, "Stored title")
+	// When PaneID is empty, should fallback to stored PaneTitle via ToView()
+	if sessions[0].Signals[0].Title != "Stored title" {
+		t.Errorf("Title = %q, want %q (fallback)", sessions[0].Signals[0].Title, "Stored title")
 	}
 }
