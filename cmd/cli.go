@@ -22,6 +22,7 @@ const cmdName = "beacon"
 type EnvironmentProvider interface {
 	GetEnvironment() (*signal.Environment, error)
 	GetPaneTitle(paneID string) (string, error)
+	ListPaneIDs() ([]string, error)
 }
 
 // EmitCmd emits a beacon signal based on hook events from stdin.
@@ -108,6 +109,65 @@ func (c *EmitCmd) getPreservedEnvironment(cli *CLI, store signal.Store, sessionI
 		return nil, err
 	}
 	return env, nil
+}
+
+// CleanCmd removes stale beacon signals whose tmux panes no longer exist.
+type CleanCmd struct {
+	Signal string `name:"signal" short:"S" help:"Signal type" default:"claude" enum:"claude"`
+	Env    string `name:"env" short:"E" help:"Environment type" default:"tmux" enum:"tmux,none"`
+}
+
+func (c *CleanCmd) Run(cli *CLI) error {
+	if c.Env == "none" {
+		return nil
+	}
+
+	store, err := cli.getSignalStore()
+	if err != nil {
+		return err
+	}
+
+	signals, err := store.List(c.Signal)
+	if err != nil {
+		return err
+	}
+
+	provider := cli.getTmuxContextProvider()
+
+	paneIDs, err := provider.ListPaneIDs()
+	if err != nil {
+		return err
+	}
+	activePane := make(map[string]bool, len(paneIDs))
+	for _, id := range paneIDs {
+		activePane[id] = true
+	}
+
+	// Track newest signal per pane to detect duplicates
+	newestByPane := make(map[string]*signal.Signal)
+	for _, sig := range signals {
+		if sig.Environment == nil || sig.Environment.Type != "tmux" || sig.Environment.PaneID == "" {
+			continue
+		}
+		if existing, ok := newestByPane[sig.Environment.PaneID]; !ok || sig.UpdatedAt.After(existing.UpdatedAt) {
+			newestByPane[sig.Environment.PaneID] = sig
+		}
+	}
+
+	for _, sig := range signals {
+		if sig.Environment == nil || sig.Environment.Type != "tmux" || sig.Environment.PaneID == "" {
+			continue
+		}
+
+		// Delete if pane no longer exists, or if a newer signal owns the same pane
+		if !activePane[sig.Environment.PaneID] || newestByPane[sig.Environment.PaneID].SessionID != sig.SessionID {
+			if delErr := store.Delete(sig.SignalType, sig.SessionID); delErr != nil {
+				return delErr
+			}
+		}
+	}
+
+	return nil
 }
 
 // ScanCmd scans tmux windows/sessions for signals.
@@ -301,6 +361,7 @@ type CLI struct {
 	Version kong.VersionFlag `help:"Show version"`
 	Emit    EmitCmd          `cmd:"" help:"Emit a beacon signal from hook event"`
 	Scan    ScanCmd          `cmd:"" help:"Scan for beacon signals in tmux"`
+	Clean   CleanCmd         `cmd:"" help:"Remove stale beacon signals"`
 
 	signalStore         signal.Store
 	tmuxContextProvider EnvironmentProvider
