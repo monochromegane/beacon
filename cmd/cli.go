@@ -22,6 +22,7 @@ const cmdName = "beacon"
 type EnvironmentProvider interface {
 	GetEnvironment() (*signal.Environment, error)
 	GetPaneTitle(paneID string) (string, error)
+	ListPaneIDs() ([]string, error)
 }
 
 // EmitCmd emits a beacon signal based on hook events from stdin.
@@ -133,14 +134,33 @@ func (c *CleanCmd) Run(cli *CLI) error {
 
 	provider := cli.getTmuxContextProvider()
 
+	paneIDs, err := provider.ListPaneIDs()
+	if err != nil {
+		return err
+	}
+	activePane := make(map[string]bool, len(paneIDs))
+	for _, id := range paneIDs {
+		activePane[id] = true
+	}
+
+	// Track newest signal per pane to detect duplicates
+	newestByPane := make(map[string]*signal.Signal)
+	for _, sig := range signals {
+		if sig.Environment == nil || sig.Environment.Type != "tmux" || sig.Environment.PaneID == "" {
+			continue
+		}
+		if existing, ok := newestByPane[sig.Environment.PaneID]; !ok || sig.UpdatedAt.After(existing.UpdatedAt) {
+			newestByPane[sig.Environment.PaneID] = sig
+		}
+	}
+
 	for _, sig := range signals {
 		if sig.Environment == nil || sig.Environment.Type != "tmux" || sig.Environment.PaneID == "" {
 			continue
 		}
 
-		_, err := provider.GetPaneTitle(sig.Environment.PaneID)
-		if err != nil {
-			// Pane no longer exists — delete stale signal
+		// Delete if pane no longer exists, or if a newer signal owns the same pane
+		if !activePane[sig.Environment.PaneID] || newestByPane[sig.Environment.PaneID].SessionID != sig.SessionID {
 			if delErr := store.Delete(sig.SignalType, sig.SessionID); delErr != nil {
 				return delErr
 			}

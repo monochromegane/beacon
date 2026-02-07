@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -430,9 +429,9 @@ func TestCLI_Emit_InvalidJSON(t *testing.T) {
 }
 
 type mockContextProvider struct {
-	env        *signal.Environment
-	paneTitle  string           // for GetPaneTitle
-	paneErrors map[string]error // paneID → error (nil = success)
+	env           *signal.Environment
+	paneTitle     string   // for GetPaneTitle
+	activePaneIDs []string // for ListPaneIDs
 }
 
 func (m *mockContextProvider) GetEnvironment() (*signal.Environment, error) {
@@ -440,11 +439,6 @@ func (m *mockContextProvider) GetEnvironment() (*signal.Environment, error) {
 }
 
 func (m *mockContextProvider) GetPaneTitle(paneID string) (string, error) {
-	if m.paneErrors != nil {
-		if err, ok := m.paneErrors[paneID]; ok {
-			return "", err
-		}
-	}
 	if m.paneTitle != "" {
 		return m.paneTitle, nil
 	}
@@ -452,6 +446,10 @@ func (m *mockContextProvider) GetPaneTitle(paneID string) (string, error) {
 		return m.env.PaneTitle, nil
 	}
 	return "", nil
+}
+
+func (m *mockContextProvider) ListPaneIDs() ([]string, error) {
+	return m.activePaneIDs, nil
 }
 
 func newTestCLIWithTmux(store *mockSignalStore, input string, provider *mockContextProvider) (*CLI, *bytes.Buffer) {
@@ -914,6 +912,7 @@ func TestCLI_Clean_DeletesStaleSignals(t *testing.T) {
 		SessionID:  "active1",
 		SignalType: "claude",
 		State:      signal.StateRunning,
+		UpdatedAt:  time.Now(),
 		Environment: &signal.Environment{
 			Type:   "tmux",
 			PaneID: "%0",
@@ -924,6 +923,7 @@ func TestCLI_Clean_DeletesStaleSignals(t *testing.T) {
 		SessionID:  "stale1",
 		SignalType: "claude",
 		State:      signal.StateStarted,
+		UpdatedAt:  time.Now(),
 		Environment: &signal.Environment{
 			Type:   "tmux",
 			PaneID: "%99",
@@ -931,10 +931,7 @@ func TestCLI_Clean_DeletesStaleSignals(t *testing.T) {
 	}
 
 	provider := &mockContextProvider{
-		paneErrors: map[string]error{
-			"%99": errors.New("pane not found"),
-		},
-		paneTitle: "active",
+		activePaneIDs: []string{"%0"}, // only %0 exists, %99 does not
 	}
 
 	cli, _ := newTestCLIWithTmux(store, "", provider)
@@ -951,6 +948,53 @@ func TestCLI_Clean_DeletesStaleSignals(t *testing.T) {
 	// Stale signal should be deleted
 	if _, exists := store.signals["claude_stale1"]; exists {
 		t.Error("Stale signal should have been deleted")
+	}
+}
+
+func TestCLI_Clean_DeletesDuplicatePaneSignals(t *testing.T) {
+	store := newMockSignalStore()
+	now := time.Now()
+	// Older stale signal: same pane %1, but from a previous session
+	store.signals["claude_old_session"] = &signal.Signal{
+		SessionID:  "old_session",
+		SignalType: "claude",
+		State:      signal.StateStarted,
+		UpdatedAt:  now.Add(-1 * time.Hour),
+		Environment: &signal.Environment{
+			Type:   "tmux",
+			PaneID: "%1",
+		},
+	}
+	// Newer active signal: same pane %1, current session
+	store.signals["claude_new_session"] = &signal.Signal{
+		SessionID:  "new_session",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		UpdatedAt:  now,
+		Environment: &signal.Environment{
+			Type:   "tmux",
+			PaneID: "%1",
+		},
+	}
+
+	provider := &mockContextProvider{
+		activePaneIDs: []string{"%1"}, // pane exists
+	}
+
+	cli, _ := newTestCLIWithTmux(store, "", provider)
+
+	err := cli.Execute([]string{"clean"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	// Newer signal should remain
+	if _, exists := store.signals["claude_new_session"]; !exists {
+		t.Error("Newer signal should NOT have been deleted")
+	}
+	// Older signal should be deleted (stale duplicate on same pane)
+	if _, exists := store.signals["claude_old_session"]; exists {
+		t.Error("Older signal on same pane should have been deleted")
 	}
 }
 
@@ -993,9 +1037,7 @@ func TestCLI_Clean_EnvNone_IsNoop(t *testing.T) {
 	}
 
 	provider := &mockContextProvider{
-		paneErrors: map[string]error{
-			"%99": errors.New("pane not found"),
-		},
+		activePaneIDs: []string{}, // no active panes
 	}
 
 	cli, _ := newTestCLIWithTmux(store, "", provider)

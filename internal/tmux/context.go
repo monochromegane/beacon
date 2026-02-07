@@ -100,3 +100,19 @@ func (p *ContextProvider) GetPaneTitle(paneID string) (string, error) {
 	}
 	return extractPaneTitleSummary(strings.TrimSuffix(string(output), "\n")), nil
 }
+
+// ListPaneIDs returns all pane IDs across all tmux sessions.
+func (p *ContextProvider) ListPaneIDs() ([]string, error) {
+	output, err := p.executor.Execute("tmux", "list-panes", "-a", "-F", "#{pane_id}")
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSuffix(string(output), "\n"), "\n")
+	var ids []string
+	for _, line := range lines {
+		if id := strings.TrimSpace(line); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
