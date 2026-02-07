@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.2.1](https://github.com/monochromegane/beacon/compare/v0.2.0...v0.2.1) - 2026-02-07
+- Menubar by @monochromegane in https://github.com/monochromegane/beacon/pull/28
+- Fix SwiftBar script example for non-login shell environment by @monochromegane in https://github.com/monochromegane/beacon/pull/30
+- Clean by @monochromegane in https://github.com/monochromegane/beacon/pull/31
+- Add clean command to SessionStart hook in README example by @monochromegane in https://github.com/monochromegane/beacon/pull/32
+
 ## [v0.2.0](https://github.com/monochromegane/beacon/compare/v0.1.3...v0.2.0) - 2026-02-04
 - Readme2 by @monochromegane in https://github.com/monochromegane/beacon/pull/25
 - Refactor formatter and scanner to reduce code duplication by @monochromegane in https://github.com/monochromegane/beacon/pull/27
