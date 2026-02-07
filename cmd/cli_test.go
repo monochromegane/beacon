@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -429,8 +430,9 @@ func TestCLI_Emit_InvalidJSON(t *testing.T) {
 }
 
 type mockContextProvider struct {
-	env       *signal.Environment
-	paneTitle string // for GetPaneTitle
+	env        *signal.Environment
+	paneTitle  string           // for GetPaneTitle
+	paneErrors map[string]error // paneID → error (nil = success)
 }
 
 func (m *mockContextProvider) GetEnvironment() (*signal.Environment, error) {
@@ -438,6 +440,11 @@ func (m *mockContextProvider) GetEnvironment() (*signal.Environment, error) {
 }
 
 func (m *mockContextProvider) GetPaneTitle(paneID string) (string, error) {
+	if m.paneErrors != nil {
+		if err, ok := m.paneErrors[paneID]; ok {
+			return "", err
+		}
+	}
 	if m.paneTitle != "" {
 		return m.paneTitle, nil
 	}
@@ -898,4 +905,121 @@ func TestCLI_Scan_Tmux_WindowTemplate_WithSignals(t *testing.T) {
 	if !strings.Contains(output, "running") {
 		t.Errorf("Output = %q, want to contain %q", output, "running")
 	}
+}
+
+func TestCLI_Clean_DeletesStaleSignals(t *testing.T) {
+	store := newMockSignalStore()
+	// Active signal: pane %0 exists
+	store.signals["claude_active1"] = &signal.Signal{
+		SessionID:  "active1",
+		SignalType: "claude",
+		State:      signal.StateRunning,
+		Environment: &signal.Environment{
+			Type:   "tmux",
+			PaneID: "%0",
+		},
+	}
+	// Stale signal: pane %99 does not exist
+	store.signals["claude_stale1"] = &signal.Signal{
+		SessionID:  "stale1",
+		SignalType: "claude",
+		State:      signal.StateStarted,
+		Environment: &signal.Environment{
+			Type:   "tmux",
+			PaneID: "%99",
+		},
+	}
+
+	provider := &mockContextProvider{
+		paneErrors: map[string]error{
+			"%99": errors.New("pane not found"),
+		},
+		paneTitle: "active",
+	}
+
+	cli, _ := newTestCLIWithTmux(store, "", provider)
+
+	err := cli.Execute([]string{"clean"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	// Active signal should remain
+	if _, exists := store.signals["claude_active1"]; !exists {
+		t.Error("Active signal should NOT have been deleted")
+	}
+	// Stale signal should be deleted
+	if _, exists := store.signals["claude_stale1"]; exists {
+		t.Error("Stale signal should have been deleted")
+	}
+}
+
+func TestCLI_Clean_SkipsNilEnvironment(t *testing.T) {
+	store := newMockSignalStore()
+	// Signal with nil Environment (emitted with --env none)
+	store.signals["claude_noenv"] = &signal.Signal{
+		SessionID:   "noenv",
+		SignalType:  "claude",
+		State:       signal.StateRunning,
+		Environment: nil,
+	}
+
+	provider := &mockContextProvider{}
+
+	cli, _ := newTestCLIWithTmux(store, "", provider)
+
+	err := cli.Execute([]string{"clean"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	// Signal with nil environment should remain untouched
+	if _, exists := store.signals["claude_noenv"]; !exists {
+		t.Error("Signal with nil environment should NOT have been deleted")
+	}
+}
+
+func TestCLI_Clean_EnvNone_IsNoop(t *testing.T) {
+	store := newMockSignalStore()
+	// Stale signal that would be deleted with --env tmux
+	store.signals["claude_stale1"] = &signal.Signal{
+		SessionID:  "stale1",
+		SignalType: "claude",
+		State:      signal.StateStarted,
+		Environment: &signal.Environment{
+			Type:   "tmux",
+			PaneID: "%99",
+		},
+	}
+
+	provider := &mockContextProvider{
+		paneErrors: map[string]error{
+			"%99": errors.New("pane not found"),
+		},
+	}
+
+	cli, _ := newTestCLIWithTmux(store, "", provider)
+
+	err := cli.Execute([]string{"clean", "--env", "none"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	// With --env none, nothing should be deleted
+	if _, exists := store.signals["claude_stale1"]; !exists {
+		t.Error("Signal should NOT have been deleted with --env none")
+	}
+}
+
+func TestCLI_Clean_NoSignals(t *testing.T) {
+	store := newMockSignalStore()
+	provider := &mockContextProvider{}
+
+	cli, _ := newTestCLIWithTmux(store, "", provider)
+
+	err := cli.Execute([]string{"clean"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	// No error expected with empty signal store
 }

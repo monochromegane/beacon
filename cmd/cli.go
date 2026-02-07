@@ -110,6 +110,46 @@ func (c *EmitCmd) getPreservedEnvironment(cli *CLI, store signal.Store, sessionI
 	return env, nil
 }
 
+// CleanCmd removes stale beacon signals whose tmux panes no longer exist.
+type CleanCmd struct {
+	Signal string `name:"signal" short:"S" help:"Signal type" default:"claude" enum:"claude"`
+	Env    string `name:"env" short:"E" help:"Environment type" default:"tmux" enum:"tmux,none"`
+}
+
+func (c *CleanCmd) Run(cli *CLI) error {
+	if c.Env == "none" {
+		return nil
+	}
+
+	store, err := cli.getSignalStore()
+	if err != nil {
+		return err
+	}
+
+	signals, err := store.List(c.Signal)
+	if err != nil {
+		return err
+	}
+
+	provider := cli.getTmuxContextProvider()
+
+	for _, sig := range signals {
+		if sig.Environment == nil || sig.Environment.Type != "tmux" || sig.Environment.PaneID == "" {
+			continue
+		}
+
+		_, err := provider.GetPaneTitle(sig.Environment.PaneID)
+		if err != nil {
+			// Pane no longer exists — delete stale signal
+			if delErr := store.Delete(sig.SignalType, sig.SessionID); delErr != nil {
+				return delErr
+			}
+		}
+	}
+
+	return nil
+}
+
 // ScanCmd scans tmux windows/sessions for signals.
 type ScanCmd struct {
 	Signal      string `name:"signal" short:"S" help:"Signal type" default:"claude" enum:"claude"`
@@ -301,6 +341,7 @@ type CLI struct {
 	Version kong.VersionFlag `help:"Show version"`
 	Emit    EmitCmd          `cmd:"" help:"Emit a beacon signal from hook event"`
 	Scan    ScanCmd          `cmd:"" help:"Scan for beacon signals in tmux"`
+	Clean   CleanCmd         `cmd:"" help:"Remove stale beacon signals"`
 
 	signalStore         signal.Store
 	tmuxContextProvider EnvironmentProvider
