@@ -64,7 +64,7 @@ Add the following hooks to `~/.config/claude/settings.json`:
 ```json
 {
   "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "beacon clean && beacon emit" }] }],
     "SessionEnd": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
     "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
     "Stop": [{ "hooks": [{ "type": "command", "command": "beacon emit" }] }],
